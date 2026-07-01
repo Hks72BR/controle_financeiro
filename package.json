@@ -10,7 +10,9 @@
     "deploy": "vercel --prod"
   },
   "dependencies": {
+    "@google-cloud/firestore": "^8.6.0",
     "dotenv": "^16.4.7",
+    "firebase": "^12.15.0",
     "firebase-admin": "^14.1.0",
     "node-telegram-bot-api": "^0.66.0",
     "pdf-parse": "^2.4.5",

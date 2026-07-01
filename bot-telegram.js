@@ -9,16 +9,22 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
-const pdfParse = require('pdf-parse');
-const admin = require('firebase-admin');
+const { PDFParse } = require('pdf-parse');
+const { initializeApp } = require('firebase/app');
+const { getFirestore, collection, addDoc, serverTimestamp } = require('firebase/firestore');
 
-// ==================== FIREBASE ADMIN ====================
+// ==================== FIREBASE ====================
 
-admin.initializeApp({
-    projectId: 'controle-financeiro-593ea'
+const firebaseApp = initializeApp({
+    apiKey: "AIzaSyD4jC4XAJZ7btb0y-Cg82EOIAtdIoD7DPw",
+    authDomain: "controle-financeiro-593ea.firebaseapp.com",
+    projectId: "controle-financeiro-593ea",
+    storageBucket: "controle-financeiro-593ea.firebasestorage.app",
+    messagingSenderId: "648090262378",
+    appId: "1:648090262378:web:controle-financeiro"
 });
 
-const db = admin.firestore();
+const db = getFirestore(firebaseApp);
 
 // ==================== CONFIGURAÇÃO ====================
 
@@ -281,10 +287,17 @@ async function processarImagem(filePath) {
 }
 
 async function processarPDF(filePath) {
+    console.log('[DEBUG] Processando PDF:', filePath);
     const buffer = fs.readFileSync(filePath);
-    const data = await pdfParse(buffer);
+    const uint8 = new Uint8Array(buffer);
+    console.log('[DEBUG] PDF tamanho:', uint8.length, 'bytes');
+    const pdf = new PDFParse(uint8);
+    await pdf.load();
+    const result = await pdf.getText();
+    const text = result.pages.map(p => p.text).join('\n');
+    console.log('[DEBUG] PDF texto extraído:', text.substring(0, 300));
     limparTemp(filePath);
-    return data.text;
+    return text;
 }
 
 async function downloadFile(url, dest) {
@@ -327,12 +340,12 @@ async function salvarRegistro(dados) {
         valor: parseFloat((dados.valor || 0).toFixed(2)),
         fonte: dados.fonte || 'Débito',
         status: 'Pago',
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: serverTimestamp(),
         createdBy: 'bot-telegram'
     };
 
     try {
-        await db.collection('transactions').add(transaction);
+        await addDoc(collection(db, 'transactions'), transaction);
         console.log(`✅ Firestore: ${descLimpa} - R$ ${transaction.valor}`);
     } catch (err) {
         console.error('❌ Erro Firestore:', err.message);
@@ -551,6 +564,7 @@ bot.on('document', async (msg) => {
 
     } catch (err) {
         console.error('Erro documento:', err.message);
+        console.error('[DEBUG] Stack:', err.stack);
         await bot.editMessageText('❌ Erro ao processar documento. Tente novamente.',
             { chat_id: chatId, message_id: statusMsg.message_id }
         );
@@ -595,14 +609,19 @@ bot.on('message', async (msg) => {
 
 // ==================== FORMATAÇÃO ====================
 
+function escapeMarkdown(text) {
+    if (!text) return '';
+    return String(text).replace(/([*_`\[\]()~>#+\-=|{}.!])/g, '\\$1');
+}
+
 function formatarConfirmacao(dados) {
     return `✅ *Registrado automaticamente!*\n\n` +
         `💰 *Valor:* R$ ${dados.valor.toFixed(2)}\n` +
-        `📅 *Data:* ${dados.data}\n` +
-        `📝 *Descrição:* ${dados.descricao}\n` +
-        `📁 *Categoria:* ${dados.categoria} > ${dados.subcategoria}\n` +
-        `💳 *Pagamento:* ${dados.fonte}\n` +
-        `📊 *Tipo:* ${dados.tipo}`;
+        `📅 *Data:* ${escapeMarkdown(dados.data)}\n` +
+        `📝 *Descrição:* ${escapeMarkdown(dados.descricao)}\n` +
+        `📁 *Categoria:* ${escapeMarkdown(dados.categoria)} > ${escapeMarkdown(dados.subcategoria)}\n` +
+        `💳 *Pagamento:* ${escapeMarkdown(dados.fonte)}\n` +
+        `📊 *Tipo:* ${escapeMarkdown(dados.tipo)}`;
 }
 
 // ==================== INICIALIZAÇÃO ====================

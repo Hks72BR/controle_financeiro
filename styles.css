@@ -2,10 +2,10 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-    --primary: #6C63FF;
-    --primary-dark: #5A52D5;
-    --primary-light: #8B83FF;
-    --primary-bg: #F0EFFF;
+    --primary: #C5A55A;
+    --primary-dark: #A8893E;
+    --primary-light: #D4BA6A;
+    --primary-bg: #FBF7ED;
     --success: #10B981;
     --success-bg: #D1FAE5;
     --danger: #EF4444;
@@ -51,7 +51,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
     padding: 1rem;
     position: relative;
     overflow: hidden;
@@ -87,7 +87,7 @@ body {
 }
 
 .login-header { text-align: center; margin-bottom: 2rem; }
-.login-avatar { font-size: 4rem; margin-bottom: 0.5rem; }
+.login-logo { width: 220px; height: auto; margin-bottom: 0.5rem; }
 .login-header h1 { font-size: 1.8rem; font-weight: 800; color: var(--dark); }
 .login-header p { color: var(--gray-500); margin-top: 0.25rem; }
 
@@ -162,14 +162,14 @@ body {
 }
 
 .sidebar-header {
-    padding: 1.5rem;
+    padding: 1rem;
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    justify-content: center;
     border-bottom: 1px solid var(--gray-100);
 }
 
-.sidebar-logo { font-size: 2rem; }
+.sidebar-logo-img { width: 160px; height: auto; }
 .sidebar-header h2 { font-weight: 700; font-size: 1.3rem; color: var(--dark); }
 
 .sidebar-nav { flex: 1; padding: 1rem 0.75rem; display: flex; flex-direction: column; gap: 0.25rem; }
@@ -242,6 +242,7 @@ body {
 }
 
 .mobile-header h1 { font-size: 1.2rem; font-weight: 700; }
+.mobile-logo { height: 36px; width: auto; }
 .menu-btn { background: none; border: none; cursor: pointer; padding: 0.5rem; color: var(--dark); border-radius: 8px; }
 .menu-btn:hover { background: var(--gray-100); }
 
