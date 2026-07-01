@@ -1,12 +1,15 @@
-const CACHE_NAME = 'financeiro-v5';
+const CACHE_NAME = 'financeiro-v6';
 const urlsToCache = [
     './',
     './index.html',
     './styles.css',
     './app.js',
     './manifest.json',
-    './icon-192.svg',
-    './icon-512.svg'
+    './icon-192.png',
+    './icon-512.png',
+    './icon-maskable-192.png',
+    './icon-maskable-512.png',
+    './logo.png'
 ];
 
 // Install service worker

@@ -3,12 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#1a1a2e">
+    <meta name="theme-color" content="#1A1A1A">
     <meta name="description" content="Finanças Coelho - Organização Financeira Profissional">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Finanças">
     <title>Finanças Coelho</title>
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="styles.css">
-    <link rel="icon" href="logo.png" type="image/png">
+    <link rel="icon" href="icon-192.png" type="image/png">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -796,13 +801,63 @@
     </div>
 </div>
 
+<!-- ==================== BANNER INSTALAR APP ==================== -->
+<div id="installBanner" class="install-banner" style="display:none">
+    <div class="install-content">
+        <img src="icon-192.png" alt="Finanças" class="install-icon">
+        <div class="install-text">
+            <strong>Instalar Finanças Coelho</strong>
+            <span>Acesse direto da tela inicial</span>
+        </div>
+    </div>
+    <div class="install-actions">
+        <button id="dismissInstall" class="install-dismiss">Agora não</button>
+        <button id="installBtn" class="install-btn">Instalar</button>
+    </div>
+</div>
+
 <script src="app.js"></script>
 <script>
+    // Service Worker
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('service-worker.js')
             .then(() => console.log('SW registrado'))
             .catch(err => console.error('SW erro:', err));
     }
+
+    // PWA Install Prompt
+    let deferredPrompt;
+    const installBanner = document.getElementById('installBanner');
+    const installBtn = document.getElementById('installBtn');
+    const dismissInstall = document.getElementById('dismissInstall');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        if (installBanner) installBanner.style.display = 'flex';
+    });
+
+    if (installBtn) {
+        installBtn.addEventListener('click', async () => {
+            if (!deferredPrompt) return;
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            console.log('Install:', outcome);
+            deferredPrompt = null;
+            if (installBanner) installBanner.style.display = 'none';
+        });
+    }
+
+    if (dismissInstall) {
+        dismissInstall.addEventListener('click', () => {
+            if (installBanner) installBanner.style.display = 'none';
+        });
+    }
+
+    window.addEventListener('appinstalled', () => {
+        console.log('PWA instalado!');
+        if (installBanner) installBanner.style.display = 'none';
+    });
 </script>
 </body>
 </html>

@@ -802,3 +802,78 @@ input::placeholder { color: var(--gray-400); }
 
 /* ==================== EDIT BUTTON ==================== */
 .tx-actions button.edit-btn:hover { background: var(--primary-bg); color: var(--primary); }
+
+/* ==================== PWA INSTALL BANNER ==================== */
+.install-banner {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #252525;
+    border-top: 1px solid var(--primary);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 10000;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
+    animation: slideUp 0.3s ease;
+}
+@keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+.install-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.install-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+}
+.install-text {
+    display: flex;
+    flex-direction: column;
+}
+.install-text strong {
+    color: var(--dark);
+    font-size: 14px;
+}
+.install-text span {
+    color: var(--gray-500);
+    font-size: 12px;
+}
+.install-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.install-dismiss {
+    background: none;
+    border: none;
+    color: var(--gray-500);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 8px;
+}
+.install-dismiss:hover { color: var(--dark); }
+.install-btn {
+    background: var(--primary);
+    color: #1A1A1A;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+}
+.install-btn:hover { background: var(--primary-light); }
+
+/* Mobile fix - banner above bottom nav */
+@media (max-width: 768px) {
+    .install-banner {
+        bottom: 56px;
+    }
+}
