@@ -1,16 +1,12 @@
-const CACHE_NAME = 'financeiro-v3';
+const CACHE_NAME = 'financeiro-v5';
 const urlsToCache = [
     './',
     './index.html',
     './styles.css',
     './app.js',
-    './importador.js',
-    './bulk-import.js',
     './manifest.json',
     './icon-192.svg',
-    './icon-512.svg',
-    'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
-    'https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js'
+    './icon-512.svg'
 ];
 
 // Install service worker
@@ -24,17 +20,19 @@ self.addEventListener('install', event => {
     );
 });
 
-// Fetch resources
+// Fetch resources - network first, fallback to cache
 self.addEventListener('fetch', event => {
     event.respondWith(
-        caches.match(event.request)
+        fetch(event.request)
             .then(response => {
-                // Return cached version or fetch new
-                if (response) {
-                    return response;
+                // Clone and cache the fresh response
+                if (response && response.status === 200) {
+                    const clone = response.clone();
+                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
                 }
-                return fetch(event.request);
+                return response;
             })
+            .catch(() => caches.match(event.request))
     );
 });
 
