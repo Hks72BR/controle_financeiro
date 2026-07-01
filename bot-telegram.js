@@ -62,7 +62,7 @@ const REGRAS_CATEGORIA = [
     { palavras: ['supersim'], categoria: 'Telefonia', subcategoria: 'Celular' },
 
     // Internet/TV
-    { palavras: ['grajaúnet', 'grajanet', 'internet', 'fibra', 'banda larga', 'net ', 'netflix', 'globoplay', 'disney', 'hbo', 'spotify', 'amazon prime', 'streaming'], categoria: 'Internet/TV', subcategoria: 'Internet' },
+    { palavras: ['grajaúnet', 'grajanet', 'graja tecnologia', 'graja', 'internet', 'fibra', 'banda larga', 'net virtua', 'netflix', 'globoplay', 'disney', 'hbo', 'spotify', 'amazon prime', 'streaming'], categoria: 'Internet/TV', subcategoria: 'Internet' },
 
     // Educação
     { palavras: ['estácio', 'estacio', 'faculdade', 'universidade', 'unip', 'anhanguera', 'mensalidade'], categoria: 'Educação', subcategoria: 'Faculdade' },
@@ -70,7 +70,7 @@ const REGRAS_CATEGORIA = [
 
     // Transporte
     { palavras: ['combustível', 'combustivel', 'gasolina', 'etanol', 'posto', 'shell', 'ipiranga', 'br distribuidora'], categoria: 'Transporte', subcategoria: 'Combustível' },
-    { palavras: ['uber', '99', '99pop', 'cabify', 'indrive'], categoria: 'Transporte', subcategoria: 'Uber' },
+    { palavras: ['uber ', 'uber.com', '99app', '99pop', '99 pop', 'cabify', 'indrive', 'indriver'], categoria: 'Transporte', subcategoria: 'Uber' },
     { palavras: ['aluguel carro', 'locadora', 'movida', 'localiza', 'unidas'], categoria: 'Transporte', subcategoria: 'Aluguel Veículo' },
 
     // Saúde
@@ -107,11 +107,13 @@ function autoCategorizar(texto) {
     for (const regra of REGRAS_CATEGORIA) {
         for (const palavra of regra.palavras) {
             if (textoLower.includes(palavra.toLowerCase())) {
+                console.log(`[DEBUG] Categorizado: "${palavra}" -> ${regra.categoria} > ${regra.subcategoria}`);
                 return { categoria: regra.categoria, subcategoria: regra.subcategoria };
             }
         }
     }
 
+    console.log('[DEBUG] Nenhuma categoria encontrada, usando Outros');
     return { categoria: 'Outros', subcategoria: 'Outros' };
 }
 

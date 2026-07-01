@@ -278,11 +278,12 @@ function renderDashboard() {
     const month = document.getElementById('dashboardMonth').value || new Date().toISOString().slice(0, 7);
     const filtered = transactions.filter(t => t.data && t.data.startsWith(month));
 
-    const receitas = filtered.filter(t => t.tipo === 'Receita').reduce((s, t) => s + (parseFloat(t.valor) || 0), 0);
+    const receitasExtras = filtered.filter(t => t.tipo === 'Receita').reduce((s, t) => s + (parseFloat(t.valor) || 0), 0);
+    const rendaBase = getRendaFamiliar();
+    const receitas = rendaBase + receitasExtras;
     const despesas = filtered.filter(t => t.tipo === 'Despesa').reduce((s, t) => s + (parseFloat(t.valor) || 0), 0);
     const saldo = receitas - despesas;
-    const rendaTotal = getRendaFamiliar();
-    const taxa = rendaTotal > 0 ? Math.max(0, ((rendaTotal - despesas) / rendaTotal * 100)) : 0;
+    const taxa = receitas > 0 ? Math.max(0, ((receitas - despesas) / receitas * 100)) : 0;
 
     document.getElementById('totalReceitas').textContent = formatCurrency(receitas);
     document.getElementById('totalDespesas').textContent = formatCurrency(despesas);
