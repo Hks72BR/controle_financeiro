@@ -3,335 +3,593 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#007BFF">
-    <meta name="description" content="Finanças Familia Coelho">
+    <meta name="theme-color" content="#6C63FF">
+    <meta name="description" content="Finanças Familia Coelho - Controle Financeiro Inteligente">
     <title>Finanças Familia Coelho</title>
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="styles.css">
     <link rel="icon" href="icon-192.svg" type="image/svg+xml">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-    <!-- Tela de Login -->
-    <div id="loginScreen" class="screen active">
-        <div class="login-container">
-            <div class="logo">💰</div>
-            <h1>Finanças Familia Coelho</h1>
-            <p class="login-subtitle">Gerencie suas finanças com inteligência</p>
+
+<!-- ==================== TELA DE LOGIN ==================== -->
+<div id="loginScreen" class="screen active">
+    <div class="login-bg">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="login-avatar">💰</div>
+                <h1>Família Coelho</h1>
+                <p>Controle Financeiro Inteligente</p>
+            </div>
             <form id="loginForm">
-                <select id="userSelect" required>
-                    <option value="">Selecione o usuário</option>
-                    <option value="higor">Higor</option>
-                    <option value="rafa">Rafa</option>
-                </select>
-                <input type="password" id="passwordInput" placeholder="Senha" required>
-                <button type="submit">🔐 Entrar</button>
+                <div class="input-group">
+                    <span class="material-icons-round">person</span>
+                    <select id="userSelect" required>
+                        <option value="">Quem é você?</option>
+                        <option value="higor">Higor</option>
+                        <option value="rafa">Rafaella</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <span class="material-icons-round">lock</span>
+                    <input type="password" id="passwordInput" placeholder="Senha" required>
+                </div>
+                <button type="submit" class="btn-login">
+                    <span>Entrar</span>
+                    <span class="material-icons-round">arrow_forward</span>
+                </button>
             </form>
-            <p class="hint">Primeiro acesso? Use a senha: 1234</p>
+            <p class="login-hint">Primeiro acesso? Senha: <strong>1234</strong></p>
         </div>
     </div>
+</div>
 
-    <!-- Tela Principal -->
-    <div id="mainScreen" class="screen">
-        <!-- Header -->
-        <header>
-            <div class="header-content">
-                <h1>💰 Financeiro</h1>
-                <div class="user-info">
-                    <span id="currentUser"></span>
-                    <button id="importarBtn" class="icon-btn" title="Importar dados CSV">📥</button>
-                    <button id="logoutBtn" class="icon-btn" title="Sair">🚪</button>
-                </div>
-            </div>
-        </header>
-
-        <!-- Navigation -->
-        <nav class="bottom-nav">
-            <button class="nav-btn active" data-tab="dashboard">
-                <span class="icon">📊</span>
+<!-- ==================== TELA PRINCIPAL ==================== -->
+<div id="mainScreen" class="screen">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo">💰</div>
+            <h2>Coelho</h2>
+        </div>
+        <nav class="sidebar-nav">
+            <button class="nav-item active" data-tab="dashboard">
+                <span class="material-icons-round">dashboard</span>
                 <span>Dashboard</span>
             </button>
-            <button class="nav-btn" data-tab="transactions">
-                <span class="icon">📝</span>
+            <button class="nav-item" data-tab="transactions">
+                <span class="material-icons-round">receipt_long</span>
                 <span>Transações</span>
             </button>
-            <button class="nav-btn" data-tab="bulk">
-                <span class="icon">📋</span>
-                <span>Importar</span>
-            </button>
-            <button class="nav-btn" data-tab="add">
-                <span class="icon">➕</span>
+            <button class="nav-item" data-tab="add">
+                <span class="material-icons-round">add_circle</span>
                 <span>Adicionar</span>
             </button>
-            <button class="nav-btn" data-tab="reports">
-                <span class="icon">📈</span>
-                <span>Relatórios</span>
+            <button class="nav-item" data-tab="analytics">
+                <span class="material-icons-round">analytics</span>
+                <span>Analytics</span>
+            </button>
+            <button class="nav-item" data-tab="config">
+                <span class="material-icons-round">settings</span>
+                <span>Configurações</span>
             </button>
         </nav>
+        <div class="sidebar-footer">
+            <div class="user-badge" id="userBadge">
+                <div class="user-avatar" id="userAvatar">H</div>
+                <span id="currentUser">Higor</span>
+            </div>
+            <button id="logoutBtn" class="btn-logout" title="Sair">
+                <span class="material-icons-round">logout</span>
+            </button>
+        </div>
+    </aside>
 
-        <!-- Dashboard Tab -->
-        <div id="dashboardTab" class="tab-content active">
-            <div class="summary-cards">
-                <div class="card green">
-                    <div class="card-icon">💵</div>
-                    <div class="card-info">
+    <!-- Mobile Header -->
+    <header class="mobile-header">
+        <button id="menuBtn" class="menu-btn">
+            <span class="material-icons-round">menu</span>
+        </button>
+        <h1>💰 Família Coelho</h1>
+        <button id="logoutBtnMobile" class="menu-btn" title="Sair">
+            <span class="material-icons-round">logout</span>
+        </button>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+        <!-- ========== DASHBOARD ========== -->
+        <section id="dashboardTab" class="tab-content active">
+            <div class="page-header">
+                <div>
+                    <h1>Dashboard</h1>
+                    <p class="subtitle" id="dashboardSubtitle">Visão geral das finanças</p>
+                </div>
+                <div class="header-actions">
+                    <select id="dashboardMonth" class="select-month"></select>
+                </div>
+            </div>
+
+            <!-- Cards de Resumo -->
+            <div class="summary-grid">
+                <div class="summary-card card-receita">
+                    <div class="card-icon-wrap"><span class="material-icons-round">trending_up</span></div>
+                    <div class="card-body">
                         <span class="card-label">Receitas</span>
                         <span class="card-value" id="totalReceitas">R$ 0,00</span>
                     </div>
                 </div>
-                <div class="card red">
-                    <div class="card-icon">💸</div>
-                    <div class="card-info">
+                <div class="summary-card card-despesa">
+                    <div class="card-icon-wrap"><span class="material-icons-round">trending_down</span></div>
+                    <div class="card-body">
                         <span class="card-label">Despesas</span>
                         <span class="card-value" id="totalDespesas">R$ 0,00</span>
                     </div>
                 </div>
-                <div class="card blue">
-                    <div class="card-icon">💰</div>
-                    <div class="card-info">
+                <div class="summary-card card-saldo">
+                    <div class="card-icon-wrap"><span class="material-icons-round">account_balance_wallet</span></div>
+                    <div class="card-body">
                         <span class="card-label">Saldo</span>
                         <span class="card-value" id="saldo">R$ 0,00</span>
                     </div>
                 </div>
-            </div>
-
-            <div class="month-expenses">
-                <h2>💸 Gastos de <span id="currentMonthName"></span></h2>
-                <div id="currentMonthExpenses" class="transactions-list"></div>
-            </div>
-        </div>
-
-        <!-- Transactions Tab -->
-        <div id="transactionsTab" class="tab-content">
-            <div class="filter-bar">
-                <select id="filterType">
-                    <option value="all">Todas</option>
-                    <option value="Receita">Receitas</option>
-                    <option value="Despesa">Despesas</option>
-                </select>
-                <select id="filterMonth">
-                    <option value="all">Todos os meses</option>
-                </select>
-                <select id="filterCategory">
-                    <option value="all">Todas categorias</option>
-                </select>
-            </div>
-            <div id="allTransactions" class="transactions-list"></div>
-        </div>
-
-        <!-- Single Transaction (OLD) -->
-        <div id="singleTransactionTab" class="tab-content" style="display:none;">
-            <form id="transactionForm" class="transaction-form">
-                <h2>Nova Transação</h2>
-                
-                <div class="form-group">
-                    <label>Tipo</label>
-                    <div class="radio-group">
-                        <label class="radio-label">
-                            <input type="radio" name="tipo" value="Receita" required>
-                            <span class="radio-custom green">💵 Receita</span>
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="tipo" value="Despesa" checked required>
-                            <span class="radio-custom red">💸 Despesa</span>
-                        </label>
+                <div class="summary-card card-economia">
+                    <div class="card-icon-wrap"><span class="material-icons-round">savings</span></div>
+                    <div class="card-body">
+                        <span class="card-label">Taxa de Economia</span>
+                        <span class="card-value" id="taxaEconomia">0%</span>
                     </div>
                 </div>
+            </div>
 
-                <div class="form-group">
-                    <label for="data">Data</label>
-                    <input type="date" id="data" required>
+            <!-- Provedores -->
+            <div class="providers-section">
+                <h2 class="section-title">Provedores Financeiros</h2>
+                <div class="providers-grid">
+                    <div class="provider-card">
+                        <div class="provider-avatar higor">H</div>
+                        <div class="provider-info">
+                            <h3>Higor</h3>
+                            <span class="provider-role">Principal</span>
+                        </div>
+                        <div class="provider-values">
+                            <div class="pv-item"><span>Líquido</span><strong id="higorLiquido">R$ 0,00</strong></div>
+                            <div class="pv-item"><span>Benefícios</span><strong id="higorBeneficios">R$ 0,00</strong></div>
+                        </div>
+                    </div>
+                    <div class="provider-card">
+                        <div class="provider-avatar rafa">R</div>
+                        <div class="provider-info">
+                            <h3>Rafaella</h3>
+                            <span class="provider-role">Esposa</span>
+                        </div>
+                        <div class="provider-values">
+                            <div class="pv-item"><span>Líquido</span><strong id="rafaLiquido">R$ 0,00</strong></div>
+                            <div class="pv-item"><span>Benefícios</span><strong id="rafaBeneficios">R$ 0,00</strong></div>
+                        </div>
+                    </div>
                 </div>
+            </div>
 
-                <div class="form-group">
-                    <label for="categoria">Categoria</label>
-                    <select id="categoria" required>
-                        <option value="">Selecione...</option>
-                        <option value="Salário">Salário</option>
-                        <option value="Vale">Vale</option>
-                        <option value="Religioso">Religioso</option>
-                        <option value="Moradia">Moradia</option>
-                        <option value="Internet/TV">Internet/TV</option>
-                        <option value="Telefonia">Telefonia</option>
-                        <option value="Educação">Educação</option>
-                        <option value="Cartão">Cartão de Crédito</option>
-                        <option value="Serviços">Serviços</option>
-                        <option value="Saúde">Saúde</option>
-                        <option value="Transporte">Transporte</option>
-                        <option value="Lazer">Lazer</option>
-                        <option value="Compras">Compras</option>
-                        <option value="Beleza">Beleza</option>
-                        <option value="Alimentação">Alimentação</option>
-                        <option value="Outros">Outros</option>
+            <!-- Gráfico Rápido + Últimas transações -->
+            <div class="dashboard-grid">
+                <div class="chart-card">
+                    <h3>Despesas por Categoria</h3>
+                    <div class="chart-container">
+                        <canvas id="dashPieChart"></canvas>
+                    </div>
+                </div>
+                <div class="recent-card">
+                    <h3>Últimas Transações</h3>
+                    <div id="recentTransactions" class="recent-list"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== TRANSAÇÕES ========== -->
+        <section id="transactionsTab" class="tab-content">
+            <div class="page-header">
+                <div>
+                    <h1>Transações</h1>
+                    <p class="subtitle">Histórico completo</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-icon" id="importCsvBtn" title="Importar CSV">
+                        <span class="material-icons-round">upload_file</span>
+                    </button>
+                    <button class="btn-icon" id="exportCsvBtn" title="Exportar CSV">
+                        <span class="material-icons-round">download</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="filters-bar">
+                <div class="filter-group">
+                    <select id="filterType">
+                        <option value="all">Todos os tipos</option>
+                        <option value="Receita">Receitas</option>
+                        <option value="Despesa">Despesas</option>
                     </select>
                 </div>
-
-                <div class="form-group">
-                    <label for="descricao">Descrição</label>
-                    <input type="text" id="descricao" placeholder="Ex: Conta de luz" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="valor">Valor (R$)</label>
-                    <input type="number" id="valor" step="0.01" placeholder="0,00" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="pagamento">Forma de Pagamento</label>
-                    <select id="pagamento" required>
-                        <option value="Débito">Débito</option>
-                        <option value="Crédito">Crédito</option>
-                        <option value="Dinheiro">Dinheiro</option>
-                        <option value="PIX">PIX</option>
-                        <option value="Transferência">Transferência</option>
+                <div class="filter-group">
+                    <select id="filterMonth">
+                        <option value="all">Todos os meses</option>
                     </select>
                 </div>
-
-                <button type="submit" class="btn-primary">💾 Salvar Transação</button>
-            </form>
-        </div>
-
-        <!-- Bulk Import Tab -->
-        <div id="bulkTab" class="tab-content">
-            <div class="bulk-import-header">
-                <h2>📊 Importação em Massa</h2>
-                <p class="subtitle">Adicione múltiplas transações de uma vez ou importe de Excel/CSV</p>
-            </div>
-
-            <div class="import-options">
-                <div class="import-card">
-                    <h3>📁 Importar Arquivo</h3>
-                    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display: none;">
-                    <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
-                        📂 Selecionar Excel ou CSV
-                    </button>
-                    <p class="file-info" id="fileInfo">Nenhum arquivo selecionado</p>
+                <div class="filter-group">
+                    <select id="filterCategory">
+                        <option value="all">Todas categorias</option>
+                    </select>
                 </div>
-
-                <div class="import-card">
-                    <h3>✏️ Tabela Rápida</h3>
-                    <button class="btn-primary" id="addBulkRow">
-                        ➕ Adicionar Linha
-                    </button>
-                    <button class="btn-success" id="saveBulkTransactions">
-                        💾 Salvar Todas
-                    </button>
+                <div class="filter-group search-group">
+                    <span class="material-icons-round">search</span>
+                    <input type="text" id="searchInput" placeholder="Buscar...">
                 </div>
             </div>
 
-            <div class="bulk-table-container">
-                <table class="bulk-table" id="bulkTable">
-                    <thead>
-                        <tr>
-                            <th>Data</th>
-                            <th>Tipo</th>
-                            <th>Categoria</th>
-                            <th>Descrição</th>
-                            <th>Valor (R$)</th>
-                            <th>Pagamento</th>
-                            <th>Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody id="bulkTableBody">
-                        <!-- Rows will be added dynamically -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
+            <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none">
 
-        <!-- Reports Tab -->
-        <div id="reportsTab" class="tab-content">
-            <div class="report-selector">
-                <select id="reportMonth">
-                    <option value="2026-01">Janeiro 2026</option>
-                </select>
-            </div>
+            <div class="transactions-container" id="transactionsList"></div>
+        </section>
 
-            <div class="report-cards">
-                <div class="report-card">
-                    <h3>Receitas</h3>
-                    <p class="report-value green" id="reportReceitas">R$ 0,00</p>
-                </div>
-                <div class="report-card">
-                    <h3>Despesas</h3>
-                    <p class="report-value red" id="reportDespesas">R$ 0,00</p>
-                </div>
-                <div class="report-card">
-                    <h3>Saldo</h3>
-                    <p class="report-value" id="reportSaldo">R$ 0,00</p>
-                </div>
-                <div class="report-card">
-                    <h3>Taxa Economia</h3>
-                    <p class="report-value" id="reportTaxa">0%</p>
+        <!-- ========== ADICIONAR ========== -->
+        <section id="addTab" class="tab-content">
+            <div class="page-header">
+                <div>
+                    <h1>Nova Transação</h1>
+                    <p class="subtitle">Registre manualmente</p>
                 </div>
             </div>
 
-            <div class="report-chart">
-                <h2>📊 Distribuição de Despesas</h2>
-                <div class="chart-wrapper">
-                    <canvas id="expenseChart"></canvas>
-                </div>
-            </div>
-
-            <div class="category-breakdown">
-                <h2>Detalhamento por Categoria</h2>
-                <div id="categoryBreakdown"></div>
-
-        <!-- Add Transaction Tab -->
-        <div id="addTab" class="tab-content">
-            <div class="template-header">
-                <h2>📋 Templates de Despesas Recorrentes</h2>
-                <p class="subtitle">Crie templates para replicar despesas fixas mensais</p>
-            </div>
-
-            <div class="template-actions">
-                <button id="criarTemplateBtn" class="btn-primary">➕ Criar Template do Mês Atual</button>
-                <button id="aplicarTemplateBtn" class="btn-secondary">📂 Aplicar Template</button>
-            </div>
-
-            <div class="templates-list" id="templatesList">
-                <div class="empty-state">
-                    <span class="icon">📋</span>
-                    <p>Nenhum template criado ainda</p>
-                    <p style="font-size: 0.9rem; margin-top: 0.5rem;">Crie um template para reutilizar despesas mensais</p>
-                </div>
-            </div>
-
-            <div id="aplicarTemplateModal" class="modal" style="display: none;">
-                <div class="modal-content">
-                    <h3>Aplicar Template</h3>
-                    <div class="form-group">
-                        <label>Selecione o template:</label>
-                        <select id="templateSelect"></select>
+            <div class="form-card">
+                <form id="transactionForm">
+                    <div class="type-selector">
+                        <label class="type-option">
+                            <input type="radio" name="tipo" value="Despesa" checked>
+                            <div class="type-box despesa">
+                                <span class="material-icons-round">arrow_downward</span>
+                                <span>Despesa</span>
+                            </div>
+                        </label>
+                        <label class="type-option">
+                            <input type="radio" name="tipo" value="Receita">
+                            <div class="type-box receita">
+                                <span class="material-icons-round">arrow_upward</span>
+                                <span>Receita</span>
+                            </div>
+                        </label>
                     </div>
-                    <div class="form-group">
-                        <label>Mês de destino:</label>
-                        <input type="month" id="mesDestino" required>
+
+                    <div class="form-grid">
+                        <div class="form-field">
+                            <label>Data</label>
+                            <input type="date" id="formData" required>
+                        </div>
+                        <div class="form-field">
+                            <label>Valor (R$)</label>
+                            <input type="number" id="formValor" step="0.01" min="0.01" placeholder="0,00" required>
+                        </div>
+                        <div class="form-field">
+                            <label>Categoria</label>
+                            <select id="formCategoria" required>
+                                <option value="">Selecione...</option>
+                                <option value="Salário">Salário</option>
+                                <option value="Vale">Vale</option>
+                                <option value="Religioso">Religioso</option>
+                                <option value="Moradia">Moradia</option>
+                                <option value="Internet/TV">Internet/TV</option>
+                                <option value="Telefonia">Telefonia</option>
+                                <option value="Educação">Educação</option>
+                                <option value="Cartão">Cartão de Crédito</option>
+                                <option value="Serviços">Serviços</option>
+                                <option value="Saúde">Saúde</option>
+                                <option value="Transporte">Transporte</option>
+                                <option value="Alimentação">Alimentação</option>
+                                <option value="Lazer">Lazer</option>
+                                <option value="Beleza">Beleza</option>
+                                <option value="Veículo">Veículo</option>
+                                <option value="Outros">Outros</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label>Subcategoria</label>
+                            <input type="text" id="formSubcategoria" placeholder="Ex: Financiamento">
+                        </div>
+                        <div class="form-field full">
+                            <label>Descrição</label>
+                            <input type="text" id="formDescricao" placeholder="Ex: Parcela Caixa" required>
+                        </div>
+                        <div class="form-field">
+                            <label>Forma de Pagamento</label>
+                            <select id="formPagamento" required>
+                                <option value="Pix">Pix</option>
+                                <option value="Débito">Débito</option>
+                                <option value="Crédito">Crédito</option>
+                                <option value="Boleto">Boleto</option>
+                                <option value="Dinheiro">Dinheiro</option>
+                                <option value="Transferência">Transferência</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label>Status</label>
+                            <select id="formStatus">
+                                <option value="Pago">Pago</option>
+                                <option value="Pendente">Pendente</option>
+                                <option value="Recebido">Recebido</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="modal-actions">
-                        <button id="confirmarAplicarBtn" class="btn-primary">✓ Aplicar</button>
-                        <button id="cancelarAplicarBtn" class="btn-secondary">✗ Cancelar</button>
+
+                    <button type="submit" class="btn-submit">
+                        <span class="material-icons-round">save</span>
+                        Salvar Transação
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- ========== ANALYTICS / BI ========== -->
+        <section id="analyticsTab" class="tab-content">
+            <div class="page-header">
+                <div>
+                    <h1>Analytics</h1>
+                    <p class="subtitle">Inteligência financeira detalhada</p>
+                </div>
+                <div class="header-actions">
+                    <select id="analyticsMonth" class="select-month"></select>
+                </div>
+            </div>
+
+            <!-- KPIs -->
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <span class="kpi-label">Renda Familiar Total</span>
+                    <span class="kpi-value" id="kpiRendaTotal">R$ 0,00</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-label">Comprometimento</span>
+                    <span class="kpi-value" id="kpiComprometimento">0%</span>
+                    <div class="kpi-bar"><div class="kpi-bar-fill" id="kpiCompBar"></div></div>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-label">Maior Gasto</span>
+                    <span class="kpi-value" id="kpiMaiorGasto">-</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-label">Qtd. Transações</span>
+                    <span class="kpi-value" id="kpiQtdTransacoes">0</span>
+                </div>
+            </div>
+
+            <!-- Gráficos -->
+            <div class="analytics-grid">
+                <div class="chart-card wide">
+                    <h3>Receitas vs Despesas (6 meses)</h3>
+                    <div class="chart-container chart-lg">
+                        <canvas id="barChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3>Distribuição por Categoria</h3>
+                    <div class="chart-container">
+                        <canvas id="doughnutChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3>Forma de Pagamento</h3>
+                    <div class="chart-container">
+                        <canvas id="paymentChart"></canvas>
                     </div>
                 </div>
             </div>
-        </div>
+
+            <!-- Top Gastos -->
+            <div class="top-expenses-card">
+                <h3>Top 10 Maiores Despesas do Mês</h3>
+                <div id="topExpensesList" class="top-list"></div>
+            </div>
+        </section>
+
+        <!-- ========== CONFIGURAÇÕES ========== -->
+        <section id="configTab" class="tab-content">
+            <div class="page-header">
+                <div>
+                    <h1>Configurações</h1>
+                    <p class="subtitle">Gerencie sua renda e preferências</p>
+                </div>
             </div>
 
-            <button id="exportBtn" class="btn-secondary">📥 Exportar CSV</button>
+            <!-- Configuração de Renda -->
+            <div class="config-section">
+                <h2 class="section-title">
+                    <span class="material-icons-round">payments</span>
+                    Renda Mensal
+                </h2>
+
+                <div class="config-grid">
+                    <!-- Higor -->
+                    <div class="config-card">
+                        <div class="config-card-header">
+                            <div class="provider-avatar higor">H</div>
+                            <div>
+                                <h3>Higor</h3>
+                                <span class="badge badge-primary">Provedor Principal</span>
+                            </div>
+                        </div>
+                        <div class="config-fields">
+                            <div class="form-field">
+                                <label>Salário Líquido</label>
+                                <div class="input-money">
+                                    <span>R$</span>
+                                    <input type="number" id="cfgHigorSalario" step="0.01" placeholder="0,00">
+                                </div>
+                            </div>
+                            <div class="form-field">
+                                <label>Vale Alimentação</label>
+                                <div class="input-money">
+                                    <span>R$</span>
+                                    <input type="number" id="cfgHigorVA" step="0.01" placeholder="0,00">
+                                </div>
+                            </div>
+                            <div class="form-field">
+                                <label>Vale Transporte</label>
+                                <div class="input-money">
+                                    <span>R$</span>
+                                    <input type="number" id="cfgHigorVT" step="0.01" placeholder="0,00">
+                                </div>
+                            </div>
+                            <div class="form-field">
+                                <label>Outros Benefícios</label>
+                                <div class="input-money">
+                                    <span>R$</span>
+                                    <input type="number" id="cfgHigorOutros" step="0.01" placeholder="0,00">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="config-total">
+                            <span>Total Mensal:</span>
+                            <strong id="cfgHigorTotal">R$ 0,00</strong>
+                        </div>
+                    </div>
+
+                    <!-- Rafaella -->
+                    <div class="config-card">
+                        <div class="config-card-header">
+                            <div class="provider-avatar rafa">R</div>
+                            <div>
+                                <h3>Rafaella</h3>
+                                <span class="badge badge-pink">Esposa</span>
+                            </div>
+                        </div>
+                        <div class="config-fields">
+                            <div class="form-field">
+                                <label>Salário Líquido</label>
+                                <div class="input-money">
+                                    <span>R$</span>
+                                    <input type="number" id="cfgRafaSalario" step="0.01" placeholder="0,00">
+                                </div>
+                            </div>
+                            <div class="form-field">
+                                <label>Vale Alimentação</label>
+                                <div class="input-money">
+                                    <span>R$</span>
+                                    <input type="number" id="cfgRafaVA" step="0.01" placeholder="0,00">
+                                </div>
+                            </div>
+                            <div class="form-field">
+                                <label>Vale Transporte</label>
+                                <div class="input-money">
+                                    <span>R$</span>
+                                    <input type="number" id="cfgRafaVT" step="0.01" placeholder="0,00">
+                                </div>
+                            </div>
+                            <div class="form-field">
+                                <label>Outros Benefícios</label>
+                                <div class="input-money">
+                                    <span>R$</span>
+                                    <input type="number" id="cfgRafaOutros" step="0.01" placeholder="0,00">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="config-total">
+                            <span>Total Mensal:</span>
+                            <strong id="cfgRafaTotal">R$ 0,00</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="config-family-total">
+                    <h3>Renda Familiar Total</h3>
+                    <span class="family-total-value" id="cfgFamiliaTotal">R$ 0,00</span>
+                </div>
+
+                <button id="saveConfigBtn" class="btn-submit">
+                    <span class="material-icons-round">save</span>
+                    Salvar Configurações
+                </button>
+            </div>
+
+            <!-- Configurações do App -->
+            <div class="config-section">
+                <h2 class="section-title">
+                    <span class="material-icons-round">tune</span>
+                    Preferências
+                </h2>
+                <div class="config-options">
+                    <div class="config-option">
+                        <div>
+                            <strong>Alterar Senha</strong>
+                            <p>Mude sua senha de acesso</p>
+                        </div>
+                        <button class="btn-outline" id="changePasswordBtn">Alterar</button>
+                    </div>
+                    <div class="config-option">
+                        <div>
+                            <strong>Limpar Dados</strong>
+                            <p>Remove todas as transações (cuidado!)</p>
+                        </div>
+                        <button class="btn-outline btn-danger" id="clearDataBtn">Limpar</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Mobile Bottom Nav -->
+    <nav class="mobile-nav">
+        <button class="mobile-nav-item active" data-tab="dashboard">
+            <span class="material-icons-round">dashboard</span>
+            <span>Home</span>
+        </button>
+        <button class="mobile-nav-item" data-tab="transactions">
+            <span class="material-icons-round">receipt_long</span>
+            <span>Histórico</span>
+        </button>
+        <button class="mobile-nav-item" data-tab="add">
+            <span class="material-icons-round">add_circle</span>
+            <span>Novo</span>
+        </button>
+        <button class="mobile-nav-item" data-tab="analytics">
+            <span class="material-icons-round">analytics</span>
+            <span>BI</span>
+        </button>
+        <button class="mobile-nav-item" data-tab="config">
+            <span class="material-icons-round">settings</span>
+            <span>Config</span>
+        </button>
+    </nav>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<!-- Modal Senha -->
+<div id="passwordModal" class="modal">
+    <div class="modal-card">
+        <h3>Alterar Senha</h3>
+        <div class="form-field">
+            <label>Nova Senha</label>
+            <input type="password" id="newPassword" placeholder="Digite a nova senha">
+        </div>
+        <div class="modal-actions">
+            <button class="btn-outline" id="cancelPasswordBtn">Cancelar</button>
+            <button class="btn-submit" id="confirmPasswordBtn">Salvar</button>
         </div>
     </div>
+</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="importador.js"></script>
-    <script src="bulk-import.js"></script>
-    <script src="app.js"></script>
-    <script>
-        // Register Service Worker
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('service-worker.js')
-                .then(reg => console.log('Service Worker registrado'))
-                .catch(err => console.error('Erro ao registrar Service Worker:', err));
-        }
-    </script>
+<script src="app.js"></script>
+<script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('service-worker.js')
+            .then(() => console.log('SW registrado'))
+            .catch(err => console.error('SW erro:', err));
+    }
+</script>
 </body>
 </html>
