@@ -12,6 +12,7 @@ const http = require('http');
 const { PDFParse } = require('pdf-parse');
 const { initializeApp } = require('firebase/app');
 const { getFirestore, collection, addDoc, serverTimestamp } = require('firebase/firestore');
+const { getAuth, signInWithEmailAndPassword } = require('firebase/auth');
 
 // ==================== FIREBASE ====================
 
@@ -25,6 +26,24 @@ const firebaseApp = initializeApp({
 });
 
 const db = getFirestore(firebaseApp);
+const authInstance = getAuth(firebaseApp);
+
+// Autenticar bot com Firebase Auth
+const BOT_EMAIL = process.env.BOT_EMAIL || 'bot@financascoelho.app';
+const BOT_PASSWORD = process.env.BOT_PASSWORD || 'BotCoelho2026!';
+
+async function authenticateBot() {
+    try {
+        await signInWithEmailAndPassword(authInstance, BOT_EMAIL, BOT_PASSWORD);
+        console.log('🔐 Bot autenticado no Firebase');
+    } catch (err) {
+        console.error('❌ Falha na autenticação do bot:', err.message);
+        console.error('   Configure BOT_EMAIL e BOT_PASSWORD no .env');
+        console.error('   Ou crie a conta do bot no app primeiro');
+    }
+}
+
+authenticateBot();
 
 // ==================== CONFIGURAÇÃO ====================
 

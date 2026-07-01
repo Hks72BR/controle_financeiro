@@ -12,15 +12,15 @@ firebase.initializeApp({
 });
 
 const db = firebase.firestore();
+const auth = firebase.auth();
 const TRANSACTIONS_COL = 'transactions';
 const CONFIG_COL = 'config';
 const USERS_COL = 'users';
 
 // ==================== STATE ====================
-const USERS_KEY = 'financeiro_users';
-const defaultUsers = {
-    higor: { name: 'Higor', password: '1234' },
-    rafa: { name: 'Rafaella', password: '1234' }
+const USER_MAP = {
+    higor: { name: 'Higor', email: 'higor@financascoelho.app' },
+    rafa: { name: 'Rafaella', email: 'rafa@financascoelho.app' }
 };
 
 const defaultConfig = {
@@ -33,16 +33,12 @@ let currentUserKey = null;
 let transactions = [];
 let config = {};
 let charts = {};
-let unsubscribe = null; // Firestore listener
+let unsubscribe = null;
 let budgets = {};
 let metas = [];
 
 // ==================== INIT ====================
 function init() {
-    if (!localStorage.getItem(USERS_KEY)) {
-        localStorage.setItem(USERS_KEY, JSON.stringify(defaultUsers));
-    }
-    // Load config from Firestore (fallback to defaults)
     loadConfigFromFirestore();
     setupEventListeners();
 }
@@ -140,30 +136,58 @@ async function saveConfigToFirestore() {
     }
 }
 
-// ==================== AUTH ====================
-document.getElementById('loginForm').addEventListener('submit', (e) => {
+// ==================== AUTH (Firebase Email/Password) ====================
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const username = document.getElementById('userSelect').value;
     const password = document.getElementById('passwordInput').value;
-    const users = JSON.parse(localStorage.getItem(USERS_KEY));
+    const userInfo = USER_MAP[username];
 
-    if (users[username] && users[username].password === password) {
-        currentUser = users[username].name;
-        currentUserKey = username;
-        document.getElementById('loginScreen').classList.remove('active');
-        document.getElementById('mainScreen').classList.add('active');
-        document.getElementById('currentUser').textContent = currentUser;
-        document.getElementById('userAvatar').textContent = currentUser[0];
-        startRealtimeSync();
-        Promise.all([loadConfigFromFirestore(), loadBudgetsFromFirestore(), loadMetasFromFirestore()]).then(() => renderDashboard());
-        showToast(`Bem-vindo(a), ${currentUser}!`, 'success');
-    } else {
-        showToast('Usuário ou senha incorretos', 'error');
+    if (!userInfo) {
+        showToast('Selecione um usuário', 'error');
+        return;
+    }
+
+    try {
+        // Tentar login
+        await auth.signInWithEmailAndPassword(userInfo.email, password);
+        enterApp(username, userInfo.name);
+    } catch (err) {
+        if (err.code === 'auth/user-not-found') {
+            // Primeiro acesso: criar conta automaticamente
+            try {
+                await auth.createUserWithEmailAndPassword(userInfo.email, password);
+                enterApp(username, userInfo.name);
+                showToast('Conta criada com sucesso!', 'success');
+                return;
+            } catch (createErr) {
+                showToast('Erro ao criar conta: ' + createErr.message, 'error');
+                return;
+            }
+        }
+        if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+            showToast('Senha incorreta', 'error');
+        } else {
+            showToast('Erro ao entrar: ' + err.message, 'error');
+        }
     }
 });
 
+function enterApp(userKey, userName) {
+    currentUser = userName;
+    currentUserKey = userKey;
+    document.getElementById('loginScreen').classList.remove('active');
+    document.getElementById('mainScreen').classList.add('active');
+    document.getElementById('currentUser').textContent = currentUser;
+    document.getElementById('userAvatar').textContent = currentUser[0];
+    startRealtimeSync();
+    Promise.all([loadConfigFromFirestore(), loadBudgetsFromFirestore(), loadMetasFromFirestore()]).then(() => renderDashboard());
+    showToast(`Bem-vindo(a), ${currentUser}!`, 'success');
+}
+
 function logout() {
     if (unsubscribe) unsubscribe();
+    auth.signOut();
     currentUser = null;
     currentUserKey = null;
     document.getElementById('mainScreen').classList.remove('active');
@@ -691,15 +715,20 @@ function handleExport() {
 }
 
 // ==================== PASSWORD / CLEAR ====================
-function handleChangePassword() {
+async function handleChangePassword() {
     const newPass = document.getElementById('newPassword').value;
-    if (!newPass || newPass.length < 4) { showToast('Senha deve ter pelo menos 4 caracteres', 'error'); return; }
-    const users = JSON.parse(localStorage.getItem(USERS_KEY));
-    users[currentUserKey].password = newPass;
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-    document.getElementById('passwordModal').classList.remove('active');
-    document.getElementById('newPassword').value = '';
-    showToast('Senha alterada!', 'success');
+    if (!newPass || newPass.length < 6) { showToast('Senha deve ter pelo menos 6 caracteres', 'error'); return; }
+    try {
+        const user = auth.currentUser;
+        if (user) {
+            await user.updatePassword(newPass);
+            document.getElementById('passwordModal').classList.remove('active');
+            document.getElementById('newPassword').value = '';
+            showToast('Senha alterada com sucesso!', 'success');
+        }
+    } catch (err) {
+        showToast('Erro ao alterar senha: ' + err.message, 'error');
+    }
 }
 
 async function handleClearData() {
