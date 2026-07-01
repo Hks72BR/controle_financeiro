@@ -10,6 +10,15 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const pdfParse = require('pdf-parse');
+const admin = require('firebase-admin');
+
+// ==================== FIREBASE ADMIN ====================
+
+admin.initializeApp({
+    projectId: 'controle-financeiro-593ea'
+});
+
+const db = admin.firestore();
 
 // ==================== CONFIGURAÇÃO ====================
 
@@ -304,23 +313,35 @@ function limparTemp(...arquivos) {
     });
 }
 
-// ==================== SALVAR NO CSV ====================
+// ==================== SALVAR NO FIRESTORE + CSV ====================
 
-function salvarRegistro(dados) {
+async function salvarRegistro(dados) {
     const descLimpa = (dados.descricao || 'Sem descrição').replace(/,/g, ' -').replace(/\n/g, ' ');
-    const linha = [
-        dados.data,
-        dados.tipo || 'Despesa',
-        dados.categoria || 'Outros',
-        dados.subcategoria || 'Outros',
-        descLimpa,
-        (dados.valor || 0).toFixed(2),
-        dados.fonte || 'Débito',
-        'Pago'
-    ].join(',');
 
-    fs.appendFileSync(CSV_FILE, '\n' + linha, 'utf-8');
-    console.log(`✅ Salvo: ${linha}`);
+    const transaction = {
+        data: dados.data,
+        tipo: dados.tipo || 'Despesa',
+        categoria: dados.categoria || 'Outros',
+        subcategoria: dados.subcategoria || 'Outros',
+        descricao: descLimpa,
+        valor: parseFloat((dados.valor || 0).toFixed(2)),
+        fonte: dados.fonte || 'Débito',
+        status: 'Pago',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdBy: 'bot-telegram'
+    };
+
+    try {
+        await db.collection('transactions').add(transaction);
+        console.log(`✅ Firestore: ${descLimpa} - R$ ${transaction.valor}`);
+    } catch (err) {
+        console.error('❌ Erro Firestore:', err.message);
+    }
+
+    // Backup local no CSV
+    const linha = [dados.data, transaction.tipo, transaction.categoria, transaction.subcategoria, descLimpa, transaction.valor.toFixed(2), transaction.fonte, 'Pago'].join(',');
+    try { fs.appendFileSync(CSV_FILE, '\n' + linha, 'utf-8'); } catch (e) { }
+
     return linha;
 }
 
@@ -462,7 +483,7 @@ bot.on('photo', async (msg) => {
             return;
         }
 
-        salvarRegistro(dados);
+        await salvarRegistro(dados);
         await bot.editMessageText(formatarConfirmacao(dados),
             { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
         );
@@ -523,7 +544,7 @@ bot.on('document', async (msg) => {
             return;
         }
 
-        salvarRegistro(dados);
+        await salvarRegistro(dados);
         await bot.editMessageText(formatarConfirmacao(dados),
             { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
         );
@@ -538,7 +559,7 @@ bot.on('document', async (msg) => {
 
 // ==================== REGISTRO MANUAL POR TEXTO ====================
 
-bot.on('message', (msg) => {
+bot.on('message', async (msg) => {
     if (!msg.text || msg.text.startsWith('/') || msg.photo || msg.document) return;
 
     const chatId = msg.chat.id;
@@ -567,7 +588,7 @@ bot.on('message', (msg) => {
             subcategoria: categoriaDetectada.subcategoria
         };
 
-        salvarRegistro(dados);
+        await salvarRegistro(dados);
         bot.sendMessage(chatId, formatarConfirmacao(dados), { parse_mode: 'Markdown' });
     }
 });

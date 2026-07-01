@@ -1,11 +1,23 @@
 // ==================== CONTROLE FINANCEIRO - APP.JS ====================
-// Família Coelho - PWA Completo com Analytics
+// Família Coelho - PWA com Firebase Firestore
 
-// ==================== STORAGE ====================
-const STORAGE_KEY = 'financeiro_data';
+// ==================== FIREBASE CONFIG ====================
+firebase.initializeApp({
+    apiKey: "AIzaSyD4jC4XAJZ7btb0y-Cg82EOIAtdIoD7DPw",
+    authDomain: "controle-financeiro-593ea.firebaseapp.com",
+    projectId: "controle-financeiro-593ea",
+    storageBucket: "controle-financeiro-593ea.firebasestorage.app",
+    messagingSenderId: "697313204607",
+    appId: "1:697313204607:web:2b2437bd40611f11c4e24a"
+});
+
+const db = firebase.firestore();
+const TRANSACTIONS_COL = 'transactions';
+const CONFIG_COL = 'config';
+const USERS_COL = 'users';
+
+// ==================== STATE ====================
 const USERS_KEY = 'financeiro_users';
-const CONFIG_KEY = 'financeiro_config';
-
 const defaultUsers = {
     higor: { name: 'Higor', password: '1234' },
     rafa: { name: 'Rafaella', password: '1234' }
@@ -21,17 +33,98 @@ let currentUserKey = null;
 let transactions = [];
 let config = {};
 let charts = {};
+let unsubscribe = null; // Firestore listener
 
 // ==================== INIT ====================
 function init() {
     if (!localStorage.getItem(USERS_KEY)) {
         localStorage.setItem(USERS_KEY, JSON.stringify(defaultUsers));
     }
-    if (!localStorage.getItem(CONFIG_KEY)) {
-        localStorage.setItem(CONFIG_KEY, JSON.stringify(defaultConfig));
-    }
-    config = JSON.parse(localStorage.getItem(CONFIG_KEY));
+    // Load config from Firestore (fallback to defaults)
+    loadConfigFromFirestore();
     setupEventListeners();
+}
+
+// ==================== FIREBASE DATA ====================
+function startRealtimeSync() {
+    // Listen to transactions in real-time
+    if (unsubscribe) unsubscribe();
+
+    unsubscribe = db.collection(TRANSACTIONS_COL)
+        .orderBy('data', 'desc')
+        .onSnapshot(snapshot => {
+            transactions = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            // Sort by date ascending for processing
+            transactions.sort((a, b) => (a.data || '').localeCompare(b.data || ''));
+            populateMonthSelectors();
+            // Re-render active tab
+            const activeTab = document.querySelector('.tab-content.active');
+            if (activeTab) {
+                const tabName = activeTab.id.replace('Tab', '');
+                switch (tabName) {
+                    case 'dashboard': renderDashboard(); break;
+                    case 'transactions': renderTransactions(); break;
+                    case 'analytics': renderAnalytics(); break;
+                }
+            }
+        }, err => {
+            console.error('Firestore sync error:', err);
+            showToast('Erro ao sincronizar dados', 'error');
+        });
+}
+
+async function addTransactionToFirestore(transaction) {
+    try {
+        await db.collection(TRANSACTIONS_COL).add({
+            ...transaction,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdBy: currentUser || 'app'
+        });
+        return true;
+    } catch (err) {
+        console.error('Error adding transaction:', err);
+        showToast('Erro ao salvar transação', 'error');
+        return false;
+    }
+}
+
+async function deleteTransactionFromFirestore(docId) {
+    try {
+        await db.collection(TRANSACTIONS_COL).doc(docId).delete();
+        return true;
+    } catch (err) {
+        console.error('Error deleting:', err);
+        showToast('Erro ao excluir', 'error');
+        return false;
+    }
+}
+
+async function loadConfigFromFirestore() {
+    try {
+        const doc = await db.collection(CONFIG_COL).doc('renda').get();
+        if (doc.exists) {
+            config = doc.data();
+        } else {
+            config = defaultConfig;
+            await db.collection(CONFIG_COL).doc('renda').set(config);
+        }
+    } catch (err) {
+        console.error('Config load error:', err);
+        config = defaultConfig;
+    }
+}
+
+async function saveConfigToFirestore() {
+    try {
+        await db.collection(CONFIG_COL).doc('renda').set(config);
+        return true;
+    } catch (err) {
+        console.error('Config save error:', err);
+        return false;
+    }
 }
 
 // ==================== AUTH ====================
@@ -48,8 +141,8 @@ document.getElementById('loginForm').addEventListener('submit', (e) => {
         document.getElementById('mainScreen').classList.add('active');
         document.getElementById('currentUser').textContent = currentUser;
         document.getElementById('userAvatar').textContent = currentUser[0];
-        loadData();
-        renderDashboard();
+        startRealtimeSync();
+        loadConfigFromFirestore().then(() => renderDashboard());
         showToast(`Bem-vindo(a), ${currentUser}!`, 'success');
     } else {
         showToast('Usuário ou senha incorretos', 'error');
@@ -57,6 +150,7 @@ document.getElementById('loginForm').addEventListener('submit', (e) => {
 });
 
 function logout() {
+    if (unsubscribe) unsubscribe();
     currentUser = null;
     currentUserKey = null;
     document.getElementById('mainScreen').classList.remove('active');
@@ -64,76 +158,44 @@ function logout() {
     document.getElementById('passwordInput').value = '';
 }
 
-// ==================== DATA ====================
-function loadData() {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    transactions = stored ? JSON.parse(stored) : [];
-    config = JSON.parse(localStorage.getItem(CONFIG_KEY)) || defaultConfig;
-}
-
-function saveData() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
-}
-
-function saveConfig() {
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-}
-
 // ==================== NAVIGATION ====================
 function setupEventListeners() {
-    // Nav items (sidebar)
     document.querySelectorAll('.nav-item').forEach(btn => {
         btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
-
-    // Mobile nav
     document.querySelectorAll('.mobile-nav-item').forEach(btn => {
         btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
 
-    // Logout
     document.getElementById('logoutBtn').addEventListener('click', logout);
     document.getElementById('logoutBtnMobile').addEventListener('click', logout);
-
-    // Mobile menu
     document.getElementById('menuBtn').addEventListener('click', toggleSidebar);
 
-    // Dashboard month
     document.getElementById('dashboardMonth').addEventListener('change', renderDashboard);
-
-    // Analytics month
     document.getElementById('analyticsMonth').addEventListener('change', renderAnalytics);
 
-    // Filters
     document.getElementById('filterType').addEventListener('change', renderTransactions);
     document.getElementById('filterMonth').addEventListener('change', renderTransactions);
     document.getElementById('filterCategory').addEventListener('change', renderTransactions);
     document.getElementById('searchInput').addEventListener('input', renderTransactions);
 
-    // Form
-    document.getElementById('transactionForm').addEventListener('submit', addTransaction);
+    document.getElementById('transactionForm').addEventListener('submit', handleAddTransaction);
     document.getElementById('formData').value = new Date().toISOString().split('T')[0];
 
-    // Config
     document.getElementById('saveConfigBtn').addEventListener('click', handleSaveConfig);
     document.querySelectorAll('#configTab input[type="number"]').forEach(input => {
         input.addEventListener('input', updateConfigTotals);
     });
 
-    // Import/Export
     document.getElementById('importCsvBtn').addEventListener('click', () => document.getElementById('fileInput').click());
     document.getElementById('fileInput').addEventListener('change', handleImport);
     document.getElementById('exportCsvBtn').addEventListener('click', handleExport);
 
-    // Password
     document.getElementById('changePasswordBtn').addEventListener('click', () => document.getElementById('passwordModal').classList.add('active'));
     document.getElementById('cancelPasswordBtn').addEventListener('click', () => document.getElementById('passwordModal').classList.remove('active'));
     document.getElementById('confirmPasswordBtn').addEventListener('click', handleChangePassword);
-
-    // Clear data
     document.getElementById('clearDataBtn').addEventListener('click', handleClearData);
 
-    // Populate month selectors
     populateMonthSelectors();
 }
 
@@ -144,12 +206,9 @@ function switchTab(tabName) {
 
     document.getElementById(`${tabName}Tab`).classList.add('active');
     document.querySelectorAll(`[data-tab="${tabName}"]`).forEach(b => b.classList.add('active'));
-
-    // Close mobile sidebar
     closeSidebar();
 
-    // Render content
-    switch(tabName) {
+    switch (tabName) {
         case 'dashboard': renderDashboard(); break;
         case 'transactions': renderTransactions(); break;
         case 'analytics': renderAnalytics(); break;
@@ -180,17 +239,17 @@ function closeSidebar() {
 function populateMonthSelectors() {
     const months = getAvailableMonths();
     const currentMonth = new Date().toISOString().slice(0, 7);
-    const selectors = ['dashboardMonth', 'analyticsMonth', 'filterMonth'];
 
-    selectors.forEach(id => {
+    ['dashboardMonth', 'analyticsMonth', 'filterMonth'].forEach(id => {
         const select = document.getElementById(id);
         if (!select) return;
+        const prev = select.value;
         select.innerHTML = id === 'filterMonth' ? '<option value="all">Todos os meses</option>' : '';
         months.forEach(m => {
             const opt = document.createElement('option');
             opt.value = m;
             opt.textContent = formatMonthName(m);
-            if (m === currentMonth) opt.selected = true;
+            if ((prev && m === prev) || (!prev && m === currentMonth)) opt.selected = true;
             select.appendChild(opt);
         });
     });
@@ -199,21 +258,18 @@ function populateMonthSelectors() {
 function getAvailableMonths() {
     const monthsSet = new Set();
     const now = new Date();
-    // Always include current month and 5 previous
     for (let i = 0; i < 6; i++) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         monthsSet.add(d.toISOString().slice(0, 7));
     }
-    transactions.forEach(t => {
-        if (t.data) monthsSet.add(t.data.slice(0, 7));
-    });
+    transactions.forEach(t => { if (t.data) monthsSet.add(t.data.slice(0, 7)); });
     return Array.from(monthsSet).sort().reverse();
 }
 
 function formatMonthName(ym) {
     const [y, m] = ym.split('-');
     const names = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-                   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
     return `${names[parseInt(m) - 1]} ${y}`;
 }
 
@@ -234,7 +290,6 @@ function renderDashboard() {
     document.getElementById('taxaEconomia').textContent = taxa.toFixed(0) + '%';
     document.getElementById('dashboardSubtitle').textContent = formatMonthName(month);
 
-    // Providers
     const higorCfg = config.higor || {};
     const rafaCfg = config.rafa || {};
     document.getElementById('higorLiquido').textContent = formatCurrency(higorCfg.salario || 0);
@@ -242,41 +297,23 @@ function renderDashboard() {
     document.getElementById('rafaLiquido').textContent = formatCurrency(rafaCfg.salario || 0);
     document.getElementById('rafaBeneficios').textContent = formatCurrency((rafaCfg.va || 0) + (rafaCfg.vt || 0) + (rafaCfg.outros || 0));
 
-    // Pie chart
     renderDashPieChart(filtered);
-
-    // Recent transactions
     renderRecentTransactions(filtered);
 }
 
 function renderDashPieChart(filtered) {
     const despesas = filtered.filter(t => t.tipo === 'Despesa');
     const byCategory = {};
-    despesas.forEach(t => {
-        const cat = t.categoria || 'Outros';
-        byCategory[cat] = (byCategory[cat] || 0) + (parseFloat(t.valor) || 0);
-    });
-
-    const labels = Object.keys(byCategory);
-    const values = Object.values(byCategory);
-    const colors = generateColors(labels.length);
+    despesas.forEach(t => { byCategory[t.categoria || 'Outros'] = (byCategory[t.categoria || 'Outros'] || 0) + (parseFloat(t.valor) || 0); });
 
     if (charts.dashPie) charts.dashPie.destroy();
-
     const ctx = document.getElementById('dashPieChart');
     if (!ctx) return;
 
     charts.dashPie = new Chart(ctx, {
         type: 'doughnut',
-        data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12, font: { size: 11 } } }
-            },
-            cutout: '65%'
-        }
+        data: { labels: Object.keys(byCategory), datasets: [{ data: Object.values(byCategory), backgroundColor: generateColors(Object.keys(byCategory).length), borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12, font: { size: 11 } } } }, cutout: '65%' }
     });
 }
 
@@ -292,8 +329,8 @@ function renderRecentTransactions(filtered) {
     container.innerHTML = recent.map(t => `
         <div class="recent-item">
             <div class="recent-item-left">
-                <span class="recent-item-desc">${t.descricao || 'Sem descrição'}</span>
-                <span class="recent-item-cat">${t.categoria || ''} • ${formatDateBR(t.data)}</span>
+                <span class="recent-item-desc">${escapeHtml(t.descricao || 'Sem descrição')}</span>
+                <span class="recent-item-cat">${escapeHtml(t.categoria || '')} • ${formatDateBR(t.data)}</span>
             </div>
             <span class="recent-item-value ${t.tipo === 'Receita' ? 'receita' : 'despesa'}">
                 ${t.tipo === 'Receita' ? '+' : '-'} ${formatCurrency(t.valor)}
@@ -310,21 +347,15 @@ function renderTransactions() {
     const search = document.getElementById('searchInput').value.toLowerCase();
 
     let filtered = [...transactions];
-
     if (type !== 'all') filtered = filtered.filter(t => t.tipo === type);
     if (month !== 'all') filtered = filtered.filter(t => t.data && t.data.startsWith(month));
     if (category !== 'all') filtered = filtered.filter(t => t.categoria === category);
-    if (search) filtered = filtered.filter(t =>
-        (t.descricao || '').toLowerCase().includes(search) ||
-        (t.categoria || '').toLowerCase().includes(search)
-    );
+    if (search) filtered = filtered.filter(t => (t.descricao || '').toLowerCase().includes(search) || (t.categoria || '').toLowerCase().includes(search));
 
-    // Update category filter options
     const categories = [...new Set(transactions.map(t => t.categoria).filter(Boolean))].sort();
     const catSelect = document.getElementById('filterCategory');
     const currentCat = catSelect.value;
-    catSelect.innerHTML = '<option value="all">Todas categorias</option>' +
-        categories.map(c => `<option value="${c}" ${c === currentCat ? 'selected' : ''}>${c}</option>`).join('');
+    catSelect.innerHTML = '<option value="all">Todas categorias</option>' + categories.map(c => `<option value="${c}" ${c === currentCat ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
 
     const container = document.getElementById('transactionsList');
     filtered.sort((a, b) => (b.data || '').localeCompare(a.data || ''));
@@ -334,17 +365,15 @@ function renderTransactions() {
         return;
     }
 
-    container.innerHTML = filtered.map((t, idx) => {
-        const originalIdx = transactions.indexOf(t);
-        return `
+    container.innerHTML = filtered.map(t => `
         <div class="transaction-row">
             <div class="tx-left">
                 <div class="tx-icon ${t.tipo === 'Receita' ? 'receita' : 'despesa'}">
                     <span class="material-icons-round">${t.tipo === 'Receita' ? 'arrow_upward' : 'arrow_downward'}</span>
                 </div>
                 <div class="tx-info">
-                    <h4>${t.descricao || 'Sem descrição'}</h4>
-                    <p>${t.categoria || ''} ${t.subcategoria ? '• ' + t.subcategoria : ''} • ${t.fonte || ''}</p>
+                    <h4>${escapeHtml(t.descricao || 'Sem descrição')}</h4>
+                    <p>${escapeHtml(t.categoria || '')} ${t.subcategoria ? '• ' + escapeHtml(t.subcategoria) : ''} • ${escapeHtml(t.fonte || '')}</p>
                 </div>
             </div>
             <div class="tx-right">
@@ -354,24 +383,21 @@ function renderTransactions() {
                 <div class="tx-date">${formatDateBR(t.data)}</div>
             </div>
             <div class="tx-actions">
-                <button onclick="deleteTransaction(${originalIdx})" title="Excluir">
+                <button onclick="deleteTransaction('${t.id}')" title="Excluir">
                     <span class="material-icons-round" style="font-size:1.1rem">delete</span>
                 </button>
             </div>
-        </div>`;
-    }).join('');
+        </div>`).join('');
 }
 
-function deleteTransaction(idx) {
+async function deleteTransaction(docId) {
     if (!confirm('Excluir esta transação?')) return;
-    transactions.splice(idx, 1);
-    saveData();
-    renderTransactions();
+    await deleteTransactionFromFirestore(docId);
     showToast('Transação excluída', 'info');
 }
 
 // ==================== ADD TRANSACTION ====================
-function addTransaction(e) {
+async function handleAddTransaction(e) {
     e.preventDefault();
 
     const transaction = {
@@ -385,15 +411,13 @@ function addTransaction(e) {
         status: document.getElementById('formStatus').value
     };
 
-    transactions.push(transaction);
-    saveData();
-    populateMonthSelectors();
-
-    document.getElementById('transactionForm').reset();
-    document.getElementById('formData').value = new Date().toISOString().split('T')[0];
-    document.querySelector('input[name="tipo"][value="Despesa"]').checked = true;
-
-    showToast('Transação adicionada!', 'success');
+    const ok = await addTransactionToFirestore(transaction);
+    if (ok) {
+        document.getElementById('transactionForm').reset();
+        document.getElementById('formData').value = new Date().toISOString().split('T')[0];
+        document.querySelector('input[name="tipo"][value="Despesa"]').checked = true;
+        showToast('Transação adicionada!', 'success');
+    }
 }
 
 // ==================== ANALYTICS ====================
@@ -401,21 +425,17 @@ function renderAnalytics() {
     const month = document.getElementById('analyticsMonth').value || new Date().toISOString().slice(0, 7);
     const filtered = transactions.filter(t => t.data && t.data.startsWith(month));
     const despesas = filtered.filter(t => t.tipo === 'Despesa');
-    const receitas = filtered.filter(t => t.tipo === 'Receita');
 
     const totalDespesas = despesas.reduce((s, t) => s + (parseFloat(t.valor) || 0), 0);
-    const totalReceitas = receitas.reduce((s, t) => s + (parseFloat(t.valor) || 0), 0);
     const rendaFamiliar = getRendaFamiliar();
     const comprometimento = rendaFamiliar > 0 ? (totalDespesas / rendaFamiliar * 100) : 0;
 
-    // KPIs
     document.getElementById('kpiRendaTotal').textContent = formatCurrency(rendaFamiliar);
     document.getElementById('kpiComprometimento').textContent = Math.min(comprometimento, 100).toFixed(0) + '%';
     document.getElementById('kpiCompBar').style.width = Math.min(comprometimento, 100) + '%';
     document.getElementById('kpiCompBar').style.background = comprometimento > 80 ? 'var(--danger)' : comprometimento > 60 ? 'var(--warning)' : 'var(--success)';
     document.getElementById('kpiQtdTransacoes').textContent = filtered.length;
 
-    // Maior gasto
     if (despesas.length > 0) {
         const maior = despesas.reduce((max, t) => (parseFloat(t.valor) || 0) > (parseFloat(max.valor) || 0) ? t : max);
         document.getElementById('kpiMaiorGasto').textContent = `${maior.descricao} (${formatCurrency(maior.valor)})`;
@@ -437,22 +457,14 @@ function renderBarChart(currentMonth) {
         months.push(d.toISOString().slice(0, 7));
     }
 
-    const receitasData = months.map(m => {
-        return transactions.filter(t => t.data && t.data.startsWith(m) && t.tipo === 'Receita')
-            .reduce((s, t) => s + (parseFloat(t.valor) || 0), 0);
-    });
-
-    const despesasData = months.map(m => {
-        return transactions.filter(t => t.data && t.data.startsWith(m) && t.tipo === 'Despesa')
-            .reduce((s, t) => s + (parseFloat(t.valor) || 0), 0);
-    });
+    const receitasData = months.map(mo => transactions.filter(t => t.data && t.data.startsWith(mo) && t.tipo === 'Receita').reduce((s, t) => s + (parseFloat(t.valor) || 0), 0));
+    const despesasData = months.map(mo => transactions.filter(t => t.data && t.data.startsWith(mo) && t.tipo === 'Despesa').reduce((s, t) => s + (parseFloat(t.valor) || 0), 0));
 
     if (charts.bar) charts.bar.destroy();
-
     charts.bar = new Chart(document.getElementById('barChart'), {
         type: 'bar',
         data: {
-            labels: months.map(m => formatMonthName(m).split(' ')[0].substring(0, 3)),
+            labels: months.map(mo => formatMonthName(mo).split(' ')[0].substring(0, 3)),
             datasets: [
                 { label: 'Receitas', data: receitasData, backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 6 },
                 { label: 'Despesas', data: despesasData, backgroundColor: 'rgba(239, 68, 68, 0.8)', borderRadius: 6 }
@@ -461,58 +473,34 @@ function renderBarChart(currentMonth) {
         options: {
             responsive: true, maintainAspectRatio: false,
             plugins: { legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } } },
-            scales: {
-                y: { beginAtZero: true, ticks: { callback: v => 'R$' + (v/1000).toFixed(0) + 'k' } },
-                x: { grid: { display: false } }
-            }
+            scales: { y: { beginAtZero: true, ticks: { callback: v => 'R$' + (v / 1000).toFixed(0) + 'k' } }, x: { grid: { display: false } } }
         }
     });
 }
 
 function renderDoughnutChart(despesas) {
     const byCategory = {};
-    despesas.forEach(t => {
-        const cat = t.categoria || 'Outros';
-        byCategory[cat] = (byCategory[cat] || 0) + (parseFloat(t.valor) || 0);
-    });
-
+    despesas.forEach(t => { byCategory[t.categoria || 'Outros'] = (byCategory[t.categoria || 'Outros'] || 0) + (parseFloat(t.valor) || 0); });
     const sorted = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
-    const labels = sorted.map(e => e[0]);
-    const values = sorted.map(e => e[1]);
-    const colors = generateColors(labels.length);
 
     if (charts.doughnut) charts.doughnut.destroy();
-
     charts.doughnut = new Chart(document.getElementById('doughnutChart'), {
         type: 'doughnut',
-        data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
-        options: {
-            responsive: true, maintainAspectRatio: false, cutout: '60%',
-            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10, font: { size: 11 } } } }
-        }
+        data: { labels: sorted.map(e => e[0]), datasets: [{ data: sorted.map(e => e[1]), backgroundColor: generateColors(sorted.length), borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10, font: { size: 11 } } } } }
     });
 }
 
 function renderPaymentChart(despesas) {
     const byPayment = {};
-    despesas.forEach(t => {
-        const fonte = t.fonte || 'Outros';
-        byPayment[fonte] = (byPayment[fonte] || 0) + (parseFloat(t.valor) || 0);
-    });
-
-    const labels = Object.keys(byPayment);
-    const values = Object.values(byPayment);
+    despesas.forEach(t => { byPayment[t.fonte || 'Outros'] = (byPayment[t.fonte || 'Outros'] || 0) + (parseFloat(t.valor) || 0); });
     const colors = ['#6C63FF', '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
     if (charts.payment) charts.payment.destroy();
-
     charts.payment = new Chart(document.getElementById('paymentChart'), {
         type: 'pie',
-        data: { labels, datasets: [{ data: values, backgroundColor: colors.slice(0, labels.length), borderWidth: 0 }] },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10, font: { size: 11 } } } }
-        }
+        data: { labels: Object.keys(byPayment), datasets: [{ data: Object.values(byPayment), backgroundColor: colors.slice(0, Object.keys(byPayment).length), borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10, font: { size: 11 } } } } }
     });
 }
 
@@ -529,8 +517,8 @@ function renderTopExpenses(despesas) {
         <div class="top-item">
             <span class="top-item-rank">#${i + 1}</span>
             <div class="top-item-info">
-                <div class="top-item-desc">${t.descricao || 'Sem descrição'}</div>
-                <div class="top-item-cat">${t.categoria || ''} • ${formatDateBR(t.data)}</div>
+                <div class="top-item-desc">${escapeHtml(t.descricao || 'Sem descrição')}</div>
+                <div class="top-item-cat">${escapeHtml(t.categoria || '')} • ${formatDateBR(t.data)}</div>
             </div>
             <span class="top-item-value">${formatCurrency(t.valor)}</span>
         </div>
@@ -556,22 +544,22 @@ function renderConfig() {
 }
 
 function updateConfigTotals() {
-    const higorTotal = (parseFloat(document.getElementById('cfgHigorSalario').value) || 0) +
-                       (parseFloat(document.getElementById('cfgHigorVA').value) || 0) +
-                       (parseFloat(document.getElementById('cfgHigorVT').value) || 0) +
-                       (parseFloat(document.getElementById('cfgHigorOutros').value) || 0);
+    const hT = (parseFloat(document.getElementById('cfgHigorSalario').value) || 0) +
+        (parseFloat(document.getElementById('cfgHigorVA').value) || 0) +
+        (parseFloat(document.getElementById('cfgHigorVT').value) || 0) +
+        (parseFloat(document.getElementById('cfgHigorOutros').value) || 0);
 
-    const rafaTotal = (parseFloat(document.getElementById('cfgRafaSalario').value) || 0) +
-                      (parseFloat(document.getElementById('cfgRafaVA').value) || 0) +
-                      (parseFloat(document.getElementById('cfgRafaVT').value) || 0) +
-                      (parseFloat(document.getElementById('cfgRafaOutros').value) || 0);
+    const rT = (parseFloat(document.getElementById('cfgRafaSalario').value) || 0) +
+        (parseFloat(document.getElementById('cfgRafaVA').value) || 0) +
+        (parseFloat(document.getElementById('cfgRafaVT').value) || 0) +
+        (parseFloat(document.getElementById('cfgRafaOutros').value) || 0);
 
-    document.getElementById('cfgHigorTotal').textContent = formatCurrency(higorTotal);
-    document.getElementById('cfgRafaTotal').textContent = formatCurrency(rafaTotal);
-    document.getElementById('cfgFamiliaTotal').textContent = formatCurrency(higorTotal + rafaTotal);
+    document.getElementById('cfgHigorTotal').textContent = formatCurrency(hT);
+    document.getElementById('cfgRafaTotal').textContent = formatCurrency(rT);
+    document.getElementById('cfgFamiliaTotal').textContent = formatCurrency(hT + rT);
 }
 
-function handleSaveConfig() {
+async function handleSaveConfig() {
     config = {
         higor: {
             salario: parseFloat(document.getElementById('cfgHigorSalario').value) || 0,
@@ -586,43 +574,37 @@ function handleSaveConfig() {
             outros: parseFloat(document.getElementById('cfgRafaOutros').value) || 0
         }
     };
-    saveConfig();
-    showToast('Configurações salvas!', 'success');
+    const ok = await saveConfigToFirestore();
+    if (ok) showToast('Configurações salvas!', 'success');
 }
 
 function getRendaFamiliar() {
     const h = config.higor || {};
     const r = config.rafa || {};
     return (h.salario || 0) + (h.va || 0) + (h.vt || 0) + (h.outros || 0) +
-           (r.salario || 0) + (r.va || 0) + (r.vt || 0) + (r.outros || 0);
+        (r.salario || 0) + (r.va || 0) + (r.vt || 0) + (r.outros || 0);
 }
 
 // ==================== IMPORT/EXPORT ====================
-function handleImport(e) {
+async function handleImport(e) {
     const file = e.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
         try {
             let imported = [];
 
             if (file.name.endsWith('.csv')) {
                 const lines = evt.target.result.split('\n').filter(l => l.trim());
-                const header = lines[0].split(',');
-
                 for (let i = 1; i < lines.length; i++) {
                     const cols = lines[i].split(',');
                     if (cols.length >= 6) {
                         imported.push({
-                            data: cols[0]?.trim(),
-                            tipo: cols[1]?.trim(),
-                            categoria: cols[2]?.trim(),
-                            subcategoria: cols[3]?.trim(),
-                            descricao: cols[4]?.trim(),
-                            valor: parseFloat(cols[5]) || 0,
-                            fonte: cols[6]?.trim() || 'Débito',
-                            status: cols[7]?.trim() || 'Pago'
+                            data: cols[0]?.trim(), tipo: cols[1]?.trim(),
+                            categoria: cols[2]?.trim(), subcategoria: cols[3]?.trim(),
+                            descricao: cols[4]?.trim(), valor: parseFloat(cols[5]) || 0,
+                            fonte: cols[6]?.trim() || 'Débito', status: cols[7]?.trim() || 'Pago'
                         });
                     }
                 }
@@ -630,10 +612,8 @@ function handleImport(e) {
                 const workbook = XLSX.read(evt.target.result, { type: 'binary' });
                 const sheet = workbook.Sheets[workbook.SheetNames[0]];
                 const data = XLSX.utils.sheet_to_json(sheet);
-
                 imported = data.map(row => ({
-                    data: row.Data || row.data || '',
-                    tipo: row.Tipo || row.tipo || 'Despesa',
+                    data: row.Data || row.data || '', tipo: row.Tipo || row.tipo || 'Despesa',
                     categoria: row.Categoria || row.categoria || 'Outros',
                     subcategoria: row.Subcategoria || row.subcategoria || '',
                     descricao: row.Descricao || row.descricao || row['Descrição'] || '',
@@ -643,10 +623,14 @@ function handleImport(e) {
                 }));
             }
 
-            transactions = [...transactions, ...imported];
-            saveData();
-            populateMonthSelectors();
-            renderDashboard();
+            // Batch write to Firestore
+            const batch = db.batch();
+            imported.forEach(t => {
+                const ref = db.collection(TRANSACTIONS_COL).doc();
+                batch.set(ref, { ...t, createdAt: firebase.firestore.FieldValue.serverTimestamp(), createdBy: currentUser || 'import' });
+            });
+            await batch.commit();
+
             showToast(`${imported.length} transações importadas!`, 'success');
         } catch (err) {
             showToast('Erro ao importar arquivo', 'error');
@@ -654,20 +638,12 @@ function handleImport(e) {
         }
     };
 
-    if (file.name.endsWith('.csv')) {
-        reader.readAsText(file);
-    } else {
-        reader.readAsBinaryString(file);
-    }
-
+    file.name.endsWith('.csv') ? reader.readAsText(file) : reader.readAsBinaryString(file);
     e.target.value = '';
 }
 
 function handleExport() {
-    if (transactions.length === 0) {
-        showToast('Nenhuma transação para exportar', 'error');
-        return;
-    }
+    if (transactions.length === 0) { showToast('Nenhuma transação para exportar', 'error'); return; }
 
     const header = 'Data,Tipo,Categoria,Subcategoria,Descricao,Valor,Fonte_Pagamento,Status';
     const lines = transactions.map(t =>
@@ -685,31 +661,26 @@ function handleExport() {
     showToast('CSV exportado!', 'success');
 }
 
-// ==================== PASSWORD ====================
+// ==================== PASSWORD / CLEAR ====================
 function handleChangePassword() {
     const newPass = document.getElementById('newPassword').value;
-    if (!newPass || newPass.length < 4) {
-        showToast('Senha deve ter pelo menos 4 caracteres', 'error');
-        return;
-    }
-
+    if (!newPass || newPass.length < 4) { showToast('Senha deve ter pelo menos 4 caracteres', 'error'); return; }
     const users = JSON.parse(localStorage.getItem(USERS_KEY));
     users[currentUserKey].password = newPass;
     localStorage.setItem(USERS_KEY, JSON.stringify(users));
-
     document.getElementById('passwordModal').classList.remove('active');
     document.getElementById('newPassword').value = '';
-    showToast('Senha alterada com sucesso!', 'success');
+    showToast('Senha alterada!', 'success');
 }
 
-// ==================== CLEAR DATA ====================
-function handleClearData() {
+async function handleClearData() {
     if (!confirm('⚠️ Tem certeza? Isso vai apagar TODAS as transações!')) return;
-    if (!confirm('Última chance! Confirma a exclusão de todos os dados?')) return;
+    if (!confirm('Última chance! Confirma?')) return;
 
-    transactions = [];
-    saveData();
-    renderDashboard();
+    const snapshot = await db.collection(TRANSACTIONS_COL).get();
+    const batch = db.batch();
+    snapshot.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
     showToast('Dados limpos', 'info');
 }
 
@@ -721,18 +692,18 @@ function formatCurrency(value) {
 function formatDateBR(dateStr) {
     if (!dateStr) return '';
     const parts = dateStr.split('-');
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return dateStr;
+    return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateStr;
 }
 
 function generateColors(count) {
-    const palette = [
-        '#6C63FF', '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
-        '#9966FF', '#FF9F40', '#C9CBCF', '#7C4DFF', '#00BCD4',
-        '#8BC34A', '#FF5722', '#607D8B', '#E91E63', '#3F51B5',
-        '#009688', '#FFC107', '#795548'
-    ];
+    const palette = ['#6C63FF', '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF', '#7C4DFF', '#00BCD4', '#8BC34A', '#FF5722', '#607D8B', '#E91E63', '#3F51B5', '#009688', '#FFC107', '#795548'];
     return palette.slice(0, count);
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
 }
 
 function showToast(message, type = 'info') {
