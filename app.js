@@ -153,23 +153,26 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
         await auth.signInWithEmailAndPassword(userInfo.email, password);
         enterApp(username, userInfo.name);
     } catch (err) {
-        if (err.code === 'auth/user-not-found') {
-            // Primeiro acesso: criar conta automaticamente
+        if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+            // Pode ser primeiro acesso OU senha errada - tentar criar conta
             try {
                 await auth.createUserWithEmailAndPassword(userInfo.email, password);
                 enterApp(username, userInfo.name);
                 showToast('Conta criada com sucesso!', 'success');
                 return;
             } catch (createErr) {
-                showToast('Erro ao criar conta: ' + createErr.message, 'error');
+                if (createErr.code === 'auth/email-already-in-use') {
+                    // Conta existe mas senha está errada
+                    showToast('Senha incorreta', 'error');
+                } else if (createErr.code === 'auth/weak-password') {
+                    showToast('Senha fraca - use pelo menos 6 caracteres', 'error');
+                } else {
+                    showToast('Erro: ' + createErr.message, 'error');
+                }
                 return;
             }
         }
-        if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-            showToast('Senha incorreta', 'error');
-        } else {
-            showToast('Erro ao entrar: ' + err.message, 'error');
-        }
+        showToast('Erro ao entrar: ' + err.message, 'error');
     }
 });
 
