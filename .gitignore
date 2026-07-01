@@ -1,50 +1,32 @@
-# Node modules
+# Node
 node_modules/
 npm-debug.log
-yarn-error.log
 
 # Vercel
-.vercel
-.vercel.json
+.vercel/
 
-# Environment variables
+# Environment
 .env
-.env.local
-.env.production
+.env.*
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Editor directories
+# Editor
 .vscode/
 .idea/
 *.swp
-*.swo
-*~
 
-# Logs
+# Temp
 *.log
-
-# Temporary files
 *.tmp
-*.temp
+temp_images/
 
-# Build outputs
-dist/
-build/
-
-# Scripts locais (não necessários na web)
-1-INSTALAR.bat
-2-RODAR_SERVIDOR.bat
-ABRIR_APP.bat
-gerar-icones.html
-
-# CSV original
-Controle_Financeiro.csv
+# Data
 *.csv
 
-# Backups
-backup/
-*.bak
+# Build
+dist/
+build/
