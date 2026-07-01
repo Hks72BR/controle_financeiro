@@ -793,7 +793,7 @@ body {
     .top-item-value { font-size: 0.85rem; }
 }
 
-@media (max-width: 380px) {
+@media (max-width: 340px) {
     .summary-grid { grid-template-columns: 1fr; gap: 0.4rem; }
     .summary-card { flex-direction: row; }
     .kpi-grid { grid-template-columns: 1fr; }
