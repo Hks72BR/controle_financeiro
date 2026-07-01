@@ -133,32 +133,60 @@ function extrairDados(texto) {
     const textoLimpo = texto.replace(/\s+/g, ' ').trim();
     const textoLower = textoLimpo.toLowerCase();
 
-    // === EXTRAIR VALOR ===
-    const padroesValor = [
-        /(?:valor|total|pagamento|transferência|transferencia|pix|cobran[cç]a)[:\s]*R?\$?\s*([\d]{1,3}(?:[.\s]?\d{3})*[,]\d{2})/gi,
-        /R\$\s*([\d]{1,3}(?:[.\s]?\d{3})*[,]\d{2})/gi,
-        /(\d{1,3}(?:\.\d{3})*,\d{2})/gi,
-    ];
-
-    let valoresEncontrados = [];
-    for (const padrao of padroesValor) {
-        let match;
-        while ((match = padrao.exec(textoLimpo)) !== null) {
-            const val = parseValorBR(match[1]);
-            if (val > 0 && val < 1000000) {
-                valoresEncontrados.push(val);
-            }
-        }
-        if (valoresEncontrados.length > 0) break;
+    // === DETECTAR SE É FATURA DE CARTÃO (não processar) ===
+    if (textoLower.includes('fatura') && (textoLower.includes('cartão') || textoLower.includes('cartao') || textoLower.includes('nubank') || textoLower.includes('credit'))) {
+        // Faturas de cartão listam várias transações - valor total não faz sentido como despesa única
+        console.log('[DEBUG] Fatura de cartão detectada - ignorando');
+        dados.valor = null;
+        return dados;
     }
 
-    if (valoresEncontrados.length > 0) {
-        const padraoExato = /(?:valor|total)[:\s]*R?\$?\s*([\d]{1,3}(?:[.\s]?\d{3})*[,]\d{2})/i;
-        const matchExato = padraoExato.exec(textoLimpo);
-        if (matchExato) {
-            dados.valor = parseValorBR(matchExato[1]);
-        } else {
-            dados.valor = Math.max(...valoresEncontrados);
+    // === EXTRAIR VALOR ===
+    // Prioridade: "Valor pago" ou "Valor" seguido de R$ na mesma ou próxima linha
+    const padroesValorPrioritario = [
+        /(?:valor\s+pago|valor\s+cobrado|valor\s+transferido|valor\s+da\s+transfer)[\s\S]*?R\$\s*([\d]{1,3}(?:[.\s]?\d{3})*[,]\d{2})/i,
+        /(?:valor\s+pago|valor\s+cobrado)[:\s]*([\d]{1,3}(?:[.\s]?\d{3})*[,]\d{2})/i,
+        /(?:valor\s+pago)[\s\n]+R?\$?\s*([\d]{1,3}(?:[.\s]?\d{3})*[,]\d{2})/i,
+    ];
+
+    for (const padrao of padroesValorPrioritario) {
+        const match = padrao.exec(textoLimpo);
+        if (match) {
+            const val = parseValorBR(match[1]);
+            if (val > 0 && val < 100000) {
+                dados.valor = val;
+                break;
+            }
+        }
+    }
+
+    if (!dados.valor) {
+        const padroesValor = [
+            /(?:valor|total|pagamento|transferência|transferencia|pix|cobran[cç]a)[:\s]*R?\$?\s*([\d]{1,3}(?:[.\s]?\d{3})*[,]\d{2})/gi,
+            /R\$\s*([\d]{1,3}(?:[.\s]?\d{3})*[,]\d{2})/gi,
+            /(\d{1,3}(?:\.\d{3})*,\d{2})/gi,
+        ];
+
+        let valoresEncontrados = [];
+        for (const padrao of padroesValor) {
+            let match;
+            while ((match = padrao.exec(textoLimpo)) !== null) {
+                const val = parseValorBR(match[1]);
+                if (val > 0 && val < 100000) {
+                    valoresEncontrados.push(val);
+                }
+            }
+            if (valoresEncontrados.length > 0) break;
+        }
+
+        if (valoresEncontrados.length > 0) {
+            const padraoExato = /(?:valor|total)[:\s]*R?\$?\s*([\d]{1,3}(?:[.\s]?\d{3})*[,]\d{2})/i;
+            const matchExato = padraoExato.exec(textoLimpo);
+            if (matchExato) {
+                dados.valor = parseValorBR(matchExato[1]);
+            } else {
+                dados.valor = valoresEncontrados[0];
+            }
         }
     }
 
@@ -183,51 +211,51 @@ function extrairDados(texto) {
     }
 
     // === EXTRAIR DESCRIÇÃO (nome limpo do recebedor) ===
-    // Primeiro tenta pegar o nome do recebedor/destinatário
-    const padroesRecebedor = [
-        /(?:para|destinat[aá]rio|benefici[aá]rio|favorecido|nome|razão social|razao social)\s*[:\n]\s*([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Úa-zà-ú]+){0,5})/m,
-        /(?:recebedor|destinat[aá]rio)[\s\S]*?(?:para|nome)\s*[:\n]\s*([^\n]{3,50})/i,
-    ];
+    const textoNormalizado = texto.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const linhasTexto = textoNormalizado.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-    for (const padrao of padroesRecebedor) {
-        const match = padrao.exec(texto);
-        if (match) {
-            let nome = match[1].trim();
-            // Limpar CPF, CNPJ, chaves, instituições do nome
-            nome = nome.replace(/\s*(CPF|CNPJ|Chave|Instituição|Ag\s|Cc\s|\*{2,}).*/gi, '').trim();
-            if (nome.length >= 3 && nome.length <= 50) {
-                dados.descricao = nome;
+    // Método 1: Procurar linha após "Para" ou "Beneficiário" no texto com newlines
+    for (let i = 0; i < linhasTexto.length; i++) {
+        const linha = linhasTexto[i];
+        if (/^(para|destinat[aá]rio|benefici[aá]rio|favorecido|nome do benefici[aá]rio|razão social|razao social)$/i.test(linha) || 
+            /^(para|destinat[aá]rio|benefici[aá]rio|favorecido|nome do benefici[aá]rio)\s*:/i.test(linha)) {
+            // O nome está na próxima linha
+            let nomeLinha = linha.includes(':') ? linha.replace(/^[^:]+:\s*/, '') : (linhasTexto[i + 1] || '');
+            nomeLinha = nomeLinha.trim();
+            if (nomeLinha && nomeLinha.length >= 3 && nomeLinha.length <= 60 &&
+                !/^(cpf|cnpj|chave|instituição|ag\s|\d)/i.test(nomeLinha)) {
+                dados.descricao = nomeLinha;
                 break;
             }
         }
     }
 
-    // Fallback: padrões genéricos
+    // Método 2: Regex no texto com newlines  
     if (!dados.descricao) {
-        const padroesDesc = [
-            /(?:descri[çc][aã]o|motivo|mensagem|hist[oó]rico)[:\s]*([^\n]{3,60})/i,
-            /(?:pagamento|transfer[eê]ncia|pix)\s+(?:para|de|enviado)\s+([^\n]{3,60})/i,
-            /(?:empresa|estabelecimento|loja)[:\s]*([^\n]{3,60})/i,
+        const padroesRecebedor = [
+            /(?:para|destinat[aá]rio|benefici[aá]rio|favorecido|nome|razão social|razao social)\s*[:\n]\s*([A-ZÀ-Úa-zà-ú][A-ZÀ-Úa-zà-ú .]+)/im,
         ];
-
-        for (const padrao of padroesDesc) {
-            const match = padrao.exec(textoLimpo);
+        for (const padrao of padroesRecebedor) {
+            const match = padrao.exec(textoNormalizado);
             if (match) {
-                let desc = match[1].trim().replace(/[,\n\r]/g, ' ');
-                desc = desc.replace(/\s*(CPF|CNPJ|Chave|Instituição|\*{2,}).*/gi, '').trim();
-                if (desc.length >= 3) {
-                    dados.descricao = desc.substring(0, 50);
+                let nome = match[1].split('\n')[0].trim();
+                if (nome.length >= 3 && nome.length <= 60) {
+                    dados.descricao = nome;
                     break;
                 }
             }
         }
     }
 
+    // Método 3: Fallback com linhas do texto
     if (!dados.descricao) {
-        const linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 3 && l.length < 60);
-        for (const linha of linhas) {
-            if (!/^\d+[,./\d]*$/.test(linha) && !/^(data|hora|valor|total|r\$|pix|cpf|cnpj)/i.test(linha)) {
-                dados.descricao = linha.replace(/[,]/g, ' ').substring(0, 60);
+        for (const linha of linhasTexto) {
+            if (linha.length >= 4 && linha.length < 60 &&
+                !/^\d+[,./\d]*$/.test(linha) &&
+                !/^(comprovante|data|hora|valor|total|r\$|pix|cpf|cnpj|chave|instituição|forma|identificação|informações|código|pagamento|ag\s|cc\s|\*{2,})/i.test(linha) &&
+                !/^\d{2}\/\d{2}/.test(linha) &&
+                /[a-zA-ZÀ-ú]{3,}/.test(linha)) {
+                dados.descricao = linha;
                 break;
             }
         }
@@ -368,8 +396,22 @@ function limparTemp(...arquivos) {
 
 // ==================== SALVAR NO FIRESTORE + CSV ====================
 
+function limparDescricao(desc) {
+    if (!desc) return 'Sem descrição';
+    let limpa = desc.replace(/\r?\n/g, ' ').replace(/,/g, ' -');
+    // Remover CPF, CNPJ, chaves e tudo depois
+    limpa = limpa.replace(/\s*(CPF|CNPJ|Chave|Instituição|Instituicao|Documento do|Ag\s+\d|Cc\s+\d).*/gi, '').trim();
+    // Remover asteriscos de mascaramento
+    limpa = limpa.replace(/\*{2,}[^\s]*/g, '').trim();
+    // Remover números de documento soltos
+    limpa = limpa.replace(/\s+\d{2,}\.\d{3}\.\d{3}[\/-]\d+/g, '').trim();
+    // Limitar tamanho
+    limpa = limpa.substring(0, 50).trim();
+    return limpa || 'Sem descrição';
+}
+
 async function salvarRegistro(dados) {
-    const descLimpa = (dados.descricao || 'Sem descrição').replace(/,/g, ' -').replace(/\n/g, ' ');
+    const descLimpa = limparDescricao(dados.descricao);
 
     const transaction = {
         data: dados.data,
