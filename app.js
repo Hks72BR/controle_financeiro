@@ -13,6 +13,12 @@ firebase.initializeApp({
 
 const db = firebase.firestore();
 const auth = firebase.auth();
+
+// Chart.js dark theme defaults
+Chart.defaults.color = '#E8E6E3';
+Chart.defaults.borderColor = '#3A3A3A';
+Chart.defaults.plugins.legend.labels.color = '#E8E6E3';
+
 const TRANSACTIONS_COL = 'transactions';
 const CONFIG_COL = 'config';
 const USERS_COL = 'users';
@@ -527,7 +533,7 @@ function renderBarChart(currentMonth) {
         options: {
             responsive: true, maintainAspectRatio: false,
             plugins: { legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } } },
-            scales: { y: { beginAtZero: true, ticks: { callback: v => 'R$' + (v / 1000).toFixed(0) + 'k' } }, x: { grid: { display: false } } }
+            scales: { y: { beginAtZero: true, ticks: { callback: v => 'R$' + (v / 1000).toFixed(0) + 'k' }, grid: { color: '#3A3A3A' } }, x: { grid: { display: false } } }
         }
     });
 }

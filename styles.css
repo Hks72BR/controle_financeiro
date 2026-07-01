@@ -284,7 +284,7 @@ body {
     padding: 0.6rem 1rem; border: 2px solid var(--gray-200);
     border-radius: var(--radius-sm); font-family: inherit;
     font-size: 0.9rem; background: var(--white); cursor: pointer;
-    transition: var(--transition);
+    transition: var(--transition); color: var(--dark);
 }
 .select-month:focus { border-color: var(--primary); outline: none; }
 
@@ -410,7 +410,7 @@ body {
 .filter-group select {
     padding: 0.6rem 1rem; border: 2px solid var(--gray-200);
     border-radius: var(--radius-sm); font-family: inherit; font-size: 0.9rem;
-    background: var(--white); cursor: pointer;
+    background: var(--white); cursor: pointer; color: var(--dark);
 }
 .filter-group select:focus { border-color: var(--primary); outline: none; }
 
@@ -422,7 +422,7 @@ body {
 }
 .search-group:focus-within { border-color: var(--primary); }
 .search-group .material-icons-round { color: var(--gray-400); font-size: 1.2rem; }
-.search-group input { border: none; outline: none; padding: 0.6rem 0; font-family: inherit; font-size: 0.9rem; flex: 1; }
+.search-group input { border: none; outline: none; padding: 0.6rem 0; font-family: inherit; font-size: 0.9rem; flex: 1; color: var(--dark); background: transparent; }
 
 .transactions-container { display: flex; flex-direction: column; gap: 0.5rem; }
 
@@ -502,7 +502,7 @@ body {
     border-radius: var(--radius-sm);
     font-family: inherit; font-size: 0.95rem;
     transition: var(--transition);
-    background: var(--white);
+    background: var(--white); color: var(--dark);
 }
 
 .form-field input:focus,
