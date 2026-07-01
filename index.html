@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#007BFF">
+    <meta name="description" content="Finanças Familia Coelho">
+    <title>Finanças Familia Coelho</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="icon-192.svg" type="image/svg+xml">
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <!-- Tela de Login -->
+    <div id="loginScreen" class="screen active">
+        <div class="login-container">
+            <div class="logo">💰</div>
+            <h1>Finanças Familia Coelho</h1>
+            <p class="login-subtitle">Gerencie suas finanças com inteligência</p>
+            <form id="loginForm">
+                <select id="userSelect" required>
+                    <option value="">Selecione o usuário</option>
+                    <option value="higor">Higor</option>
+                    <option value="rafa">Rafa</option>
+                </select>
+                <input type="password" id="passwordInput" placeholder="Senha" required>
+                <button type="submit">🔐 Entrar</button>
+            </form>
+            <p class="hint">Primeiro acesso? Use a senha: 1234</p>
+        </div>
+    </div>
+
+    <!-- Tela Principal -->
+    <div id="mainScreen" class="screen">
+        <!-- Header -->
+        <header>
+            <div class="header-content">
+                <h1>💰 Financeiro</h1>
+                <div class="user-info">
+                    <span id="currentUser"></span>
+                    <button id="importarBtn" class="icon-btn" title="Importar dados CSV">📥</button>
+                    <button id="logoutBtn" class="icon-btn" title="Sair">🚪</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="bottom-nav">
+            <button class="nav-btn active" data-tab="dashboard">
+                <span class="icon">📊</span>
+                <span>Dashboard</span>
+            </button>
+            <button class="nav-btn" data-tab="transactions">
+                <span class="icon">📝</span>
+                <span>Transações</span>
+            </button>
+            <button class="nav-btn" data-tab="bulk">
+                <span class="icon">📋</span>
+                <span>Importar</span>
+            </button>
+            <button class="nav-btn" data-tab="add">
+                <span class="icon">➕</span>
+                <span>Adicionar</span>
+            </button>
+            <button class="nav-btn" data-tab="reports">
+                <span class="icon">📈</span>
+                <span>Relatórios</span>
+            </button>
+        </nav>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboardTab" class="tab-content active">
+            <div class="summary-cards">
+                <div class="card green">
+                    <div class="card-icon">💵</div>
+                    <div class="card-info">
+                        <span class="card-label">Receitas</span>
+                        <span class="card-value" id="totalReceitas">R$ 0,00</span>
+                    </div>
+                </div>
+                <div class="card red">
+                    <div class="card-icon">💸</div>
+                    <div class="card-info">
+                        <span class="card-label">Despesas</span>
+                        <span class="card-value" id="totalDespesas">R$ 0,00</span>
+                    </div>
+                </div>
+                <div class="card blue">
+                    <div class="card-icon">💰</div>
+                    <div class="card-info">
+                        <span class="card-label">Saldo</span>
+                        <span class="card-value" id="saldo">R$ 0,00</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="month-expenses">
+                <h2>💸 Gastos de <span id="currentMonthName"></span></h2>
+                <div id="currentMonthExpenses" class="transactions-list"></div>
+            </div>
+        </div>
+
+        <!-- Transactions Tab -->
+        <div id="transactionsTab" class="tab-content">
+            <div class="filter-bar">
+                <select id="filterType">
+                    <option value="all">Todas</option>
+                    <option value="Receita">Receitas</option>
+                    <option value="Despesa">Despesas</option>
+                </select>
+                <select id="filterMonth">
+                    <option value="all">Todos os meses</option>
+                </select>
+                <select id="filterCategory">
+                    <option value="all">Todas categorias</option>
+                </select>
+            </div>
+            <div id="allTransactions" class="transactions-list"></div>
+        </div>
+
+        <!-- Single Transaction (OLD) -->
+        <div id="singleTransactionTab" class="tab-content" style="display:none;">
+            <form id="transactionForm" class="transaction-form">
+                <h2>Nova Transação</h2>
+                
+                <div class="form-group">
+                    <label>Tipo</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="tipo" value="Receita" required>
+                            <span class="radio-custom green">💵 Receita</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="tipo" value="Despesa" checked required>
+                            <span class="radio-custom red">💸 Despesa</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="data">Data</label>
+                    <input type="date" id="data" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="categoria">Categoria</label>
+                    <select id="categoria" required>
+                        <option value="">Selecione...</option>
+                        <option value="Salário">Salário</option>
+                        <option value="Vale">Vale</option>
+                        <option value="Religioso">Religioso</option>
+                        <option value="Moradia">Moradia</option>
+                        <option value="Internet/TV">Internet/TV</option>
+                        <option value="Telefonia">Telefonia</option>
+                        <option value="Educação">Educação</option>
+                        <option value="Cartão">Cartão de Crédito</option>
+                        <option value="Serviços">Serviços</option>
+                        <option value="Saúde">Saúde</option>
+                        <option value="Transporte">Transporte</option>
+                        <option value="Lazer">Lazer</option>
+                        <option value="Compras">Compras</option>
+                        <option value="Beleza">Beleza</option>
+                        <option value="Alimentação">Alimentação</option>
+                        <option value="Outros">Outros</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="descricao">Descrição</label>
+                    <input type="text" id="descricao" placeholder="Ex: Conta de luz" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="valor">Valor (R$)</label>
+                    <input type="number" id="valor" step="0.01" placeholder="0,00" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="pagamento">Forma de Pagamento</label>
+                    <select id="pagamento" required>
+                        <option value="Débito">Débito</option>
+                        <option value="Crédito">Crédito</option>
+                        <option value="Dinheiro">Dinheiro</option>
+                        <option value="PIX">PIX</option>
+                        <option value="Transferência">Transferência</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn-primary">💾 Salvar Transação</button>
+            </form>
+        </div>
+
+        <!-- Bulk Import Tab -->
+        <div id="bulkTab" class="tab-content">
+            <div class="bulk-import-header">
+                <h2>📊 Importação em Massa</h2>
+                <p class="subtitle">Adicione múltiplas transações de uma vez ou importe de Excel/CSV</p>
+            </div>
+
+            <div class="import-options">
+                <div class="import-card">
+                    <h3>📁 Importar Arquivo</h3>
+                    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display: none;">
+                    <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
+                        📂 Selecionar Excel ou CSV
+                    </button>
+                    <p class="file-info" id="fileInfo">Nenhum arquivo selecionado</p>
+                </div>
+
+                <div class="import-card">
+                    <h3>✏️ Tabela Rápida</h3>
+                    <button class="btn-primary" id="addBulkRow">
+                        ➕ Adicionar Linha
+                    </button>
+                    <button class="btn-success" id="saveBulkTransactions">
+                        💾 Salvar Todas
+                    </button>
+                </div>
+            </div>
+
+            <div class="bulk-table-container">
+                <table class="bulk-table" id="bulkTable">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Tipo</th>
+                            <th>Categoria</th>
+                            <th>Descrição</th>
+                            <th>Valor (R$)</th>
+                            <th>Pagamento</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bulkTableBody">
+                        <!-- Rows will be added dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Reports Tab -->
+        <div id="reportsTab" class="tab-content">
+            <div class="report-selector">
+                <select id="reportMonth">
+                    <option value="2026-01">Janeiro 2026</option>
+                </select>
+            </div>
+
+            <div class="report-cards">
+                <div class="report-card">
+                    <h3>Receitas</h3>
+                    <p class="report-value green" id="reportReceitas">R$ 0,00</p>
+                </div>
+                <div class="report-card">
+                    <h3>Despesas</h3>
+                    <p class="report-value red" id="reportDespesas">R$ 0,00</p>
+                </div>
+                <div class="report-card">
+                    <h3>Saldo</h3>
+                    <p class="report-value" id="reportSaldo">R$ 0,00</p>
+                </div>
+                <div class="report-card">
+                    <h3>Taxa Economia</h3>
+                    <p class="report-value" id="reportTaxa">0%</p>
+                </div>
+            </div>
+
+            <div class="report-chart">
+                <h2>📊 Distribuição de Despesas</h2>
+                <div class="chart-wrapper">
+                    <canvas id="expenseChart"></canvas>
+                </div>
+            </div>
+
+            <div class="category-breakdown">
+                <h2>Detalhamento por Categoria</h2>
+                <div id="categoryBreakdown"></div>
+
+        <!-- Add Transaction Tab -->
+        <div id="addTab" class="tab-content">
+            <div class="template-header">
+                <h2>📋 Templates de Despesas Recorrentes</h2>
+                <p class="subtitle">Crie templates para replicar despesas fixas mensais</p>
+            </div>
+
+            <div class="template-actions">
+                <button id="criarTemplateBtn" class="btn-primary">➕ Criar Template do Mês Atual</button>
+                <button id="aplicarTemplateBtn" class="btn-secondary">📂 Aplicar Template</button>
+            </div>
+
+            <div class="templates-list" id="templatesList">
+                <div class="empty-state">
+                    <span class="icon">📋</span>
+                    <p>Nenhum template criado ainda</p>
+                    <p style="font-size: 0.9rem; margin-top: 0.5rem;">Crie um template para reutilizar despesas mensais</p>
+                </div>
+            </div>
+
+            <div id="aplicarTemplateModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Aplicar Template</h3>
+                    <div class="form-group">
+                        <label>Selecione o template:</label>
+                        <select id="templateSelect"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Mês de destino:</label>
+                        <input type="month" id="mesDestino" required>
+                    </div>
+                    <div class="modal-actions">
+                        <button id="confirmarAplicarBtn" class="btn-primary">✓ Aplicar</button>
+                        <button id="cancelarAplicarBtn" class="btn-secondary">✗ Cancelar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+            </div>
+
+            <button id="exportBtn" class="btn-secondary">📥 Exportar CSV</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="importador.js"></script>
+    <script src="bulk-import.js"></script>
+    <script src="app.js"></script>
+    <script>
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('service-worker.js')
+                .then(reg => console.log('Service Worker registrado'))
+                .catch(err => console.error('Erro ao registrar Service Worker:', err));
+        }
+    </script>
+</body>
+</html>

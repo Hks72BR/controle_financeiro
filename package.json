@@ -1,0 +1,33 @@
+{
+  "name": "controle-financeiro",
+  "version": "1.0.0",
+  "description": "PWA de controle financeiro pessoal",
+  "main": "index.html",
+  "scripts": {
+    "dev": "python -m http.server 8000",
+    "bot": "node bot-telegram.js",
+    "build": "echo 'No build needed - static site'",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "node-telegram-bot-api": "^0.66.0",
+    "pdf-parse": "^2.4.5",
+    "sharp": "^0.33.2",
+    "tesseract.js": "^5.1.1"
+  },
+  "keywords": [
+    "pwa",
+    "financeiro",
+    "controle",
+    "financas",
+    "budget",
+    "expenses"
+  ],
+  "author": "Higor & Rafa",
+  "license": "PRIVATE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SEU_USUARIO/controle-financeiro.git"
+  }
+}
