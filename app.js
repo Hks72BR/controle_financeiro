@@ -34,6 +34,8 @@ let transactions = [];
 let config = {};
 let charts = {};
 let unsubscribe = null; // Firestore listener
+let budgets = {};
+let metas = [];
 
 // ==================== INIT ====================
 function init() {
@@ -102,6 +104,17 @@ async function deleteTransactionFromFirestore(docId) {
     }
 }
 
+async function updateTransactionInFirestore(docId, data) {
+    try {
+        await db.collection(TRANSACTIONS_COL).doc(docId).update(data);
+        return true;
+    } catch (err) {
+        console.error('Error updating:', err);
+        showToast('Erro ao atualizar', 'error');
+        return false;
+    }
+}
+
 async function loadConfigFromFirestore() {
     try {
         const doc = await db.collection(CONFIG_COL).doc('renda').get();
@@ -142,7 +155,7 @@ document.getElementById('loginForm').addEventListener('submit', (e) => {
         document.getElementById('currentUser').textContent = currentUser;
         document.getElementById('userAvatar').textContent = currentUser[0];
         startRealtimeSync();
-        loadConfigFromFirestore().then(() => renderDashboard());
+        Promise.all([loadConfigFromFirestore(), loadBudgetsFromFirestore(), loadMetasFromFirestore()]).then(() => renderDashboard());
         showToast(`Bem-vindo(a), ${currentUser}!`, 'success');
     } else {
         showToast('Usuário ou senha incorretos', 'error');
@@ -195,6 +208,11 @@ function setupEventListeners() {
     document.getElementById('cancelPasswordBtn').addEventListener('click', () => document.getElementById('passwordModal').classList.remove('active'));
     document.getElementById('confirmPasswordBtn').addEventListener('click', handleChangePassword);
     document.getElementById('clearDataBtn').addEventListener('click', handleClearData);
+
+    document.getElementById('saveBudgetBtn').addEventListener('click', handleSaveBudget);
+    document.getElementById('addMetaBtn').addEventListener('click', handleAddMeta);
+    document.getElementById('cancelEditBtn').addEventListener('click', closeEditModal);
+    document.getElementById('saveEditBtn').addEventListener('click', saveEditTransaction);
 
     populateMonthSelectors();
 }
@@ -300,6 +318,8 @@ function renderDashboard() {
 
     renderDashPieChart(filtered);
     renderRecentTransactions(filtered);
+    renderBudgetDashboard(filtered);
+    renderMetasDashboard();
 }
 
 function renderDashPieChart(filtered) {
@@ -373,8 +393,8 @@ function renderTransactions() {
                     <span class="material-icons-round">${t.tipo === 'Receita' ? 'arrow_upward' : 'arrow_downward'}</span>
                 </div>
                 <div class="tx-info">
-                    <h4>${escapeHtml(t.descricao || 'Sem descrição')}</h4>
-                    <p>${escapeHtml(t.categoria || '')} ${t.subcategoria ? '• ' + escapeHtml(t.subcategoria) : ''} • ${escapeHtml(t.fonte || '')}</p>
+                    <h4>${escapeHtml(t.descricao || 'Sem descrição')}${t.recorrente ? '<span class="material-icons-round tx-recurring" title="Recorrente">repeat</span>' : ''}</h4>
+                    <p>${escapeHtml(t.categoria || '')} ${t.subcategoria ? '• ' + escapeHtml(t.subcategoria) : ''} • ${escapeHtml(t.fonte || '')}${getPagadorBadge(t.pagador)}</p>
                 </div>
             </div>
             <div class="tx-right">
@@ -384,6 +404,9 @@ function renderTransactions() {
                 <div class="tx-date">${formatDateBR(t.data)}</div>
             </div>
             <div class="tx-actions">
+                <button onclick="editTransaction('${t.id}')" class="edit-btn" title="Editar">
+                    <span class="material-icons-round" style="font-size:1.1rem">edit</span>
+                </button>
                 <button onclick="deleteTransaction('${t.id}')" title="Excluir">
                     <span class="material-icons-round" style="font-size:1.1rem">delete</span>
                 </button>
@@ -409,7 +432,9 @@ async function handleAddTransaction(e) {
         descricao: document.getElementById('formDescricao').value,
         valor: parseFloat(document.getElementById('formValor').value),
         fonte: document.getElementById('formPagamento').value,
-        status: document.getElementById('formStatus').value
+        status: document.getElementById('formStatus').value,
+        pagador: document.getElementById('formPagador').value,
+        recorrente: document.getElementById('formRecorrente').checked
     };
 
     const ok = await addTransactionToFirestore(transaction);
@@ -458,7 +483,8 @@ function renderBarChart(currentMonth) {
         months.push(d.toISOString().slice(0, 7));
     }
 
-    const receitasData = months.map(mo => transactions.filter(t => t.data && t.data.startsWith(mo) && t.tipo === 'Receita').reduce((s, t) => s + (parseFloat(t.valor) || 0), 0));
+    const rendaFamiliar = getRendaFamiliar();
+    const rendaData = months.map(() => rendaFamiliar);
     const despesasData = months.map(mo => transactions.filter(t => t.data && t.data.startsWith(mo) && t.tipo === 'Despesa').reduce((s, t) => s + (parseFloat(t.valor) || 0), 0));
 
     if (charts.bar) charts.bar.destroy();
@@ -467,7 +493,7 @@ function renderBarChart(currentMonth) {
         data: {
             labels: months.map(mo => formatMonthName(mo).split(' ')[0].substring(0, 3)),
             datasets: [
-                { label: 'Receitas', data: receitasData, backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 6 },
+                { label: 'Renda Familiar', data: rendaData, backgroundColor: 'rgba(197, 165, 90, 0.8)', borderRadius: 6 },
                 { label: 'Despesas', data: despesasData, backgroundColor: 'rgba(239, 68, 68, 0.8)', borderRadius: 6 }
             ]
         },
@@ -542,6 +568,8 @@ function renderConfig() {
     document.getElementById('cfgRafaOutros').value = rafa.outros || '';
 
     updateConfigTotals();
+    renderBudgetConfig();
+    renderMetasConfig();
 }
 
 function updateConfigTotals() {
@@ -712,6 +740,209 @@ function showToast(message, type = 'info') {
     toast.textContent = message;
     toast.className = `toast ${type} show`;
     setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// ==================== BUDGET & METAS ====================
+async function loadBudgetsFromFirestore() {
+    try {
+        const doc = await db.collection(CONFIG_COL).doc('orcamento').get();
+        if (doc.exists) budgets = doc.data();
+        else budgets = {};
+    } catch (err) {
+        console.error('Budget load error:', err);
+        budgets = {};
+    }
+}
+
+async function saveBudgetsToFirestore() {
+    try {
+        await db.collection(CONFIG_COL).doc('orcamento').set(budgets);
+        return true;
+    } catch (err) {
+        console.error('Budget save error:', err);
+        showToast('Erro ao salvar orçamento', 'error');
+        return false;
+    }
+}
+
+async function loadMetasFromFirestore() {
+    try {
+        const doc = await db.collection(CONFIG_COL).doc('metas').get();
+        if (doc.exists) metas = doc.data().lista || [];
+        else metas = [];
+    } catch (err) {
+        console.error('Metas load error:', err);
+        metas = [];
+    }
+}
+
+async function saveMetasToFirestore() {
+    try {
+        await db.collection(CONFIG_COL).doc('metas').set({ lista: metas });
+        return true;
+    } catch (err) {
+        console.error('Metas save error:', err);
+        showToast('Erro ao salvar metas', 'error');
+        return false;
+    }
+}
+
+function renderBudgetDashboard(filtered) {
+    const container = document.getElementById('budgetDashboard');
+    const cards = document.getElementById('budgetCards');
+    const activeBudgets = Object.entries(budgets).filter(([_, v]) => v > 0);
+
+    if (activeBudgets.length === 0) { container.style.display = 'none'; return; }
+    container.style.display = 'block';
+
+    const despesas = filtered.filter(t => t.tipo === 'Despesa');
+    const byCategory = {};
+    despesas.forEach(t => { byCategory[t.categoria || 'Outros'] = (byCategory[t.categoria || 'Outros'] || 0) + (parseFloat(t.valor) || 0); });
+
+    cards.innerHTML = activeBudgets.map(([cat, limit]) => {
+        const spent = byCategory[cat] || 0;
+        const pct = Math.min((spent / limit) * 100, 100);
+        const color = pct > 80 ? 'var(--danger)' : pct > 60 ? 'var(--warning)' : 'var(--success)';
+        return `<div class="budget-card">
+            <div class="budget-card-header"><h4>${escapeHtml(cat)}</h4><span>${formatCurrency(spent)} / ${formatCurrency(limit)}</span></div>
+            <div class="kpi-bar"><div class="kpi-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+        </div>`;
+    }).join('');
+}
+
+function renderMetasDashboard() {
+    const container = document.getElementById('metasDashboard');
+    const cards = document.getElementById('metasCards');
+
+    if (metas.length === 0) { container.style.display = 'none'; return; }
+    container.style.display = 'block';
+
+    const totalReceitas = transactions.filter(t => t.tipo === 'Receita').reduce((s, t) => s + (parseFloat(t.valor) || 0), 0);
+    const totalDespesas = transactions.filter(t => t.tipo === 'Despesa').reduce((s, t) => s + (parseFloat(t.valor) || 0), 0);
+    const distinctMonths = new Set(transactions.map(t => t.data ? t.data.slice(0, 7) : null).filter(Boolean));
+    const rendaAccumulated = getRendaFamiliar() * distinctMonths.size;
+    const totalSavings = Math.max(0, (rendaAccumulated + totalReceitas) - totalDespesas);
+
+    cards.innerHTML = metas.map(meta => {
+        const pct = meta.valor > 0 ? Math.min((totalSavings / meta.valor) * 100, 100) : 0;
+        const color = pct >= 100 ? 'var(--success)' : pct > 50 ? 'var(--primary)' : 'var(--warning)';
+        return `<div class="meta-card">
+            <div class="meta-card-header"><h4>${escapeHtml(meta.nome)}</h4><span>${formatCurrency(totalSavings)} / ${formatCurrency(meta.valor)}</span></div>
+            <div class="kpi-bar"><div class="kpi-bar-fill" style="width:${pct.toFixed(0)}%;background:${color}"></div></div>
+            <div class="meta-deadline">Prazo: ${meta.prazo ? formatMonthName(meta.prazo) : 'Não definido'}</div>
+        </div>`;
+    }).join('');
+}
+
+function renderBudgetConfig() {
+    document.querySelectorAll('.budget-input').forEach(input => {
+        input.value = budgets[input.dataset.category] || '';
+    });
+}
+
+function renderMetasConfig() {
+    const container = document.getElementById('metasList');
+    if (metas.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="padding:1rem"><p>Nenhuma meta definida</p></div>';
+        return;
+    }
+    container.innerHTML = metas.map((m, i) => `
+        <div class="meta-list-item">
+            <div class="meta-info">
+                <h4>${escapeHtml(m.nome)}</h4>
+                <p>${formatCurrency(m.valor)} \u2022 Prazo: ${m.prazo ? formatMonthName(m.prazo) : 'N\u00e3o definido'}</p>
+            </div>
+            <button onclick="removeMeta(${i})" title="Remover">
+                <span class="material-icons-round" style="font-size:1.1rem">delete</span>
+            </button>
+        </div>
+    `).join('');
+}
+
+async function handleSaveBudget() {
+    budgets = {};
+    document.querySelectorAll('.budget-input').forEach(input => {
+        const val = parseFloat(input.value) || 0;
+        if (val > 0) budgets[input.dataset.category] = val;
+    });
+    const ok = await saveBudgetsToFirestore();
+    if (ok) showToast('Or\u00e7amento salvo!', 'success');
+}
+
+async function handleAddMeta() {
+    const nome = document.getElementById('metaNome').value.trim();
+    const valor = parseFloat(document.getElementById('metaValor').value) || 0;
+    const prazo = document.getElementById('metaPrazo').value;
+
+    if (!nome || valor <= 0) { showToast('Preencha nome e valor da meta', 'error'); return; }
+
+    metas.push({ nome, valor, prazo });
+    const ok = await saveMetasToFirestore();
+    if (ok) {
+        document.getElementById('metaNome').value = '';
+        document.getElementById('metaValor').value = '';
+        document.getElementById('metaPrazo').value = '';
+        renderMetasConfig();
+        showToast('Meta adicionada!', 'success');
+    }
+}
+
+async function removeMeta(index) {
+    if (!confirm('Remover esta meta?')) return;
+    metas.splice(index, 1);
+    await saveMetasToFirestore();
+    renderMetasConfig();
+    showToast('Meta removida', 'info');
+}
+
+// ==================== EDIT TRANSACTION ====================
+function editTransaction(docId) {
+    const t = transactions.find(tx => tx.id === docId);
+    if (!t) return;
+
+    document.getElementById('editId').value = t.id;
+    document.getElementById('editData').value = t.data || '';
+    document.getElementById('editValor').value = t.valor || '';
+    document.getElementById('editTipo').value = t.tipo || 'Despesa';
+    document.getElementById('editCategoria').value = t.categoria || '';
+    document.getElementById('editSubcategoria').value = t.subcategoria || '';
+    document.getElementById('editDescricao').value = t.descricao || '';
+    document.getElementById('editFonte').value = t.fonte || 'Pix';
+    document.getElementById('editPagador').value = t.pagador || '';
+    document.getElementById('editStatus').value = t.status || 'Pago';
+
+    document.getElementById('editModal').classList.add('active');
+}
+
+async function saveEditTransaction() {
+    const docId = document.getElementById('editId').value;
+    const data = {
+        data: document.getElementById('editData').value,
+        tipo: document.getElementById('editTipo').value,
+        categoria: document.getElementById('editCategoria').value,
+        subcategoria: document.getElementById('editSubcategoria').value,
+        descricao: document.getElementById('editDescricao').value,
+        valor: parseFloat(document.getElementById('editValor').value) || 0,
+        fonte: document.getElementById('editFonte').value,
+        pagador: document.getElementById('editPagador').value,
+        status: document.getElementById('editStatus').value
+    };
+
+    const ok = await updateTransactionInFirestore(docId, data);
+    if (ok) {
+        document.getElementById('editModal').classList.remove('active');
+        showToast('Transa\u00e7\u00e3o atualizada!', 'success');
+    }
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').classList.remove('active');
+}
+
+function getPagadorBadge(pagador) {
+    if (!pagador) return '';
+    const cls = pagador === 'Higor' ? 'higor' : pagador === 'Rafaella' ? 'rafa' : 'familia';
+    return ` <span class="pagador-badge ${cls}"><span class="dot"></span>${pagador}</span>`;
 }
 
 // ==================== INIT ====================

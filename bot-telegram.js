@@ -182,21 +182,44 @@ function extrairDados(texto) {
         dados.data = new Date().toISOString().split('T')[0];
     }
 
-    // === EXTRAIR DESCRIÇÃO ===
-    const padroesDesc = [
-        /(?:destinat[aá]rio|benefici[aá]rio|para|favorecido|nome|razão social|razao social)[:\s]*([^\n]{3,60})/i,
-        /(?:descri[çc][aã]o|motivo|mensagem|hist[oó]rico)[:\s]*([^\n]{3,60})/i,
-        /(?:pagamento|transfer[eê]ncia|pix)\s+(?:para|de|enviado)\s+([^\n]{3,60})/i,
-        /(?:empresa|estabelecimento|loja)[:\s]*([^\n]{3,60})/i,
+    // === EXTRAIR DESCRIÇÃO (nome limpo do recebedor) ===
+    // Primeiro tenta pegar o nome do recebedor/destinatário
+    const padroesRecebedor = [
+        /(?:para|destinat[aá]rio|benefici[aá]rio|favorecido|nome|razão social|razao social)\s*[:\n]\s*([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Úa-zà-ú]+){0,5})/m,
+        /(?:recebedor|destinat[aá]rio)[\s\S]*?(?:para|nome)\s*[:\n]\s*([^\n]{3,50})/i,
     ];
 
-    for (const padrao of padroesDesc) {
-        const match = padrao.exec(textoLimpo);
+    for (const padrao of padroesRecebedor) {
+        const match = padrao.exec(texto);
         if (match) {
-            dados.descricao = match[1].trim()
-                .replace(/[,\n\r]/g, ' ')
-                .substring(0, 60);
-            break;
+            let nome = match[1].trim();
+            // Limpar CPF, CNPJ, chaves, instituições do nome
+            nome = nome.replace(/\s*(CPF|CNPJ|Chave|Instituição|Ag\s|Cc\s|\*{2,}).*/gi, '').trim();
+            if (nome.length >= 3 && nome.length <= 50) {
+                dados.descricao = nome;
+                break;
+            }
+        }
+    }
+
+    // Fallback: padrões genéricos
+    if (!dados.descricao) {
+        const padroesDesc = [
+            /(?:descri[çc][aã]o|motivo|mensagem|hist[oó]rico)[:\s]*([^\n]{3,60})/i,
+            /(?:pagamento|transfer[eê]ncia|pix)\s+(?:para|de|enviado)\s+([^\n]{3,60})/i,
+            /(?:empresa|estabelecimento|loja)[:\s]*([^\n]{3,60})/i,
+        ];
+
+        for (const padrao of padroesDesc) {
+            const match = padrao.exec(textoLimpo);
+            if (match) {
+                let desc = match[1].trim().replace(/[,\n\r]/g, ' ');
+                desc = desc.replace(/\s*(CPF|CNPJ|Chave|Instituição|\*{2,}).*/gi, '').trim();
+                if (desc.length >= 3) {
+                    dados.descricao = desc.substring(0, 50);
+                    break;
+                }
+            }
         }
     }
 
@@ -230,6 +253,21 @@ function extrairDados(texto) {
         textoLower.includes('crédito em conta') || textoLower.includes('depósito') ||
         textoLower.includes('deposito') || textoLower.includes('transferência recebida')) {
         dados.tipo = 'Receita';
+    }
+
+    // === DETECTAR QUEM PAGOU ===
+    dados.pagador = 'familia';
+    const matchPagador = texto.match(/(?:pagador|de|remetente)[\s\S]*?(?:nome|de)\s*[:\n]\s*([^\n]+)/i);
+    if (matchPagador) {
+        const nomePagador = matchPagador[1].toLowerCase();
+        if (nomePagador.includes('higor')) {
+            dados.pagador = 'higor';
+        } else if (nomePagador.includes('rafaella') || nomePagador.includes('rafaela')) {
+            dados.pagador = 'rafa';
+        }
+    } else {
+        if (textoLower.includes('higor')) dados.pagador = 'higor';
+        else if (textoLower.includes('rafaella') || textoLower.includes('rafaela')) dados.pagador = 'rafa';
     }
 
     // === AUTO-CATEGORIZAR ===
@@ -341,6 +379,7 @@ async function salvarRegistro(dados) {
         descricao: descLimpa,
         valor: parseFloat((dados.valor || 0).toFixed(2)),
         fonte: dados.fonte || 'Débito',
+        pagador: dados.pagador || 'familia',
         status: 'Pago',
         createdAt: serverTimestamp(),
         createdBy: 'bot-telegram'
@@ -381,60 +420,83 @@ bot.onText(/\/start/, (msg) => {
     );
 });
 
-bot.onText(/\/ultimos/, (msg) => {
+bot.onText(/\/ultimos/, async (msg) => {
     try {
-        const csv = fs.readFileSync(CSV_FILE, 'utf-8');
-        const linhas = csv.trim().split('\n');
-        const ultimas = linhas.slice(-7);
+        const { getDocs, query, orderBy, limit } = require('firebase/firestore');
+        const q = query(collection(db, 'transactions'), orderBy('data', 'desc'), limit(7));
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+            bot.sendMessage(msg.chat.id, '📋 Nenhum registro encontrado.');
+            return;
+        }
 
         let texto = '📋 *Últimos registros:*\n\n';
-        ultimas.forEach((linha) => {
-            const cols = linha.split(',');
-            if (cols.length >= 6) {
-                const [data, tipo, cat, , desc, valor] = cols;
-                const emoji = tipo === 'Receita' ? '🟢' : '🔴';
-                texto += `${emoji} *${desc}*\n   📅 ${data} | 💰 R$ ${valor} | 📁 ${cat}\n\n`;
-            }
+        snapshot.docs.forEach(doc => {
+            const d = doc.data();
+            const emoji = d.tipo === 'Receita' ? '🟢' : '🔴';
+            const pagador = d.pagador === 'higor' ? '👤H' : d.pagador === 'rafa' ? '👤R' : '👥';
+            texto += `${emoji} *${escapeMarkdown(d.descricao || 'Sem desc')}*\n   📅 ${escapeMarkdown(d.data)} | 💰 R$ ${parseFloat(d.valor).toFixed(2)} | ${pagador}\n\n`;
         });
 
         bot.sendMessage(msg.chat.id, texto, { parse_mode: 'Markdown' });
     } catch (err) {
+        console.error('Erro /ultimos:', err.message);
         bot.sendMessage(msg.chat.id, '❌ Erro ao ler registros.');
     }
 });
 
-bot.onText(/\/resumo/, (msg) => {
+bot.onText(/\/resumo/, async (msg) => {
     try {
-        const csv = fs.readFileSync(CSV_FILE, 'utf-8');
-        const linhas = csv.trim().split('\n').slice(1);
-
+        const { getDocs, query, where, orderBy } = require('firebase/firestore');
         const mesAtual = new Date().toISOString().slice(0, 7);
+        const mesFim = mesAtual + '\uf8ff';
+
+        const snapshot = await getDocs(query(collection(db, 'transactions')));
+        const doMes = snapshot.docs.map(d => d.data()).filter(d => d.data && d.data.startsWith(mesAtual));
+
         let totalDespesas = 0;
         let totalReceitas = 0;
-        let count = 0;
+        const porCategoria = {};
+        let gastoHigor = 0, gastoRafa = 0;
 
-        linhas.forEach(linha => {
-            const cols = linha.split(',');
-            if (cols.length >= 6 && cols[0].startsWith(mesAtual)) {
-                const valor = parseFloat(cols[5]) || 0;
-                if (cols[1] === 'Receita') totalReceitas += valor;
-                else totalDespesas += valor;
-                count++;
+        doMes.forEach(d => {
+            const valor = parseFloat(d.valor) || 0;
+            if (d.tipo === 'Receita') totalReceitas += valor;
+            else {
+                totalDespesas += valor;
+                porCategoria[d.categoria || 'Outros'] = (porCategoria[d.categoria || 'Outros'] || 0) + valor;
+                if (d.pagador === 'higor') gastoHigor += valor;
+                else if (d.pagador === 'rafa') gastoRafa += valor;
             }
         });
 
         const saldo = totalReceitas - totalDespesas;
-        const emoji = saldo >= 0 ? '🟢' : '🔴';
+        const topCats = Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-        bot.sendMessage(msg.chat.id,
-            `📊 *Resumo do Mês (${mesAtual})*\n\n` +
-            `🟢 Receitas: R$ ${totalReceitas.toFixed(2)}\n` +
-            `🔴 Despesas: R$ ${totalDespesas.toFixed(2)}\n` +
-            `${emoji} Saldo: R$ ${saldo.toFixed(2)}\n\n` +
-            `📝 Total de registros: ${count}`,
-            { parse_mode: 'Markdown' }
-        );
+        let texto = `📊 *Resumo do Mês \\(${escapeMarkdown(mesAtual)}\\)*\n\n`;
+        texto += `🟢 Receitas: R$ ${totalReceitas.toFixed(2)}\n`;
+        texto += `🔴 Despesas: R$ ${totalDespesas.toFixed(2)}\n`;
+        texto += `${saldo >= 0 ? '🟢' : '🔴'} Saldo: R$ ${saldo.toFixed(2)}\n`;
+        texto += `📝 Transações: ${doMes.length}\n\n`;
+
+        if (gastoHigor > 0 || gastoRafa > 0) {
+            texto += `*Gastos por pessoa:*\n`;
+            if (gastoHigor > 0) texto += `👤 Higor: R$ ${gastoHigor.toFixed(2)}\n`;
+            if (gastoRafa > 0) texto += `👤 Rafaella: R$ ${gastoRafa.toFixed(2)}\n`;
+            texto += `\n`;
+        }
+
+        if (topCats.length > 0) {
+            texto += `*Top categorias:*\n`;
+            topCats.forEach(([cat, val]) => {
+                texto += `  📁 ${escapeMarkdown(cat)}: R$ ${val.toFixed(2)}\n`;
+            });
+        }
+
+        bot.sendMessage(msg.chat.id, texto, { parse_mode: 'Markdown' });
     } catch (err) {
+        console.error('Erro /resumo:', err.message);
         bot.sendMessage(msg.chat.id, '❌ Erro ao gerar resumo.');
     }
 });
@@ -623,7 +685,8 @@ function formatarConfirmacao(dados) {
         `📝 *Descrição:* ${escapeMarkdown(dados.descricao)}\n` +
         `📁 *Categoria:* ${escapeMarkdown(dados.categoria)} > ${escapeMarkdown(dados.subcategoria)}\n` +
         `💳 *Pagamento:* ${escapeMarkdown(dados.fonte)}\n` +
-        `📊 *Tipo:* ${escapeMarkdown(dados.tipo)}`;
+        `� *Pagador:* ${dados.pagador === 'higor' ? 'Higor' : dados.pagador === 'rafa' ? 'Rafaella' : 'Família'}\n` +
+        `�📊 *Tipo:* ${escapeMarkdown(dados.tipo)}`;
 }
 
 // ==================== INICIALIZAÇÃO ====================

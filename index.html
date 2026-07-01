@@ -175,6 +175,24 @@
                 </div>
             </div>
 
+            <!-- Orçamento do Mês -->
+            <div class="budget-dashboard-section" id="budgetDashboard" style="margin-bottom:2rem;display:none">
+                <h2 class="section-title">
+                    <span class="material-icons-round">account_balance</span>
+                    Orçamento
+                </h2>
+                <div class="budget-cards" id="budgetCards"></div>
+            </div>
+
+            <!-- Metas de Economia -->
+            <div class="metas-dashboard-section" id="metasDashboard" style="margin-bottom:2rem;display:none">
+                <h2 class="section-title">
+                    <span class="material-icons-round">flag</span>
+                    Metas de Economia
+                </h2>
+                <div class="metas-cards" id="metasCards"></div>
+            </div>
+
             <!-- Gráfico Rápido + Últimas transações -->
             <div class="dashboard-grid">
                 <div class="chart-card">
@@ -322,6 +340,23 @@
                                 <option value="Recebido">Recebido</option>
                             </select>
                         </div>
+                        <div class="form-field">
+                            <label>Pagador</label>
+                            <select id="formPagador">
+                                <option value="">Selecione...</option>
+                                <option value="Higor">Higor</option>
+                                <option value="Rafaella">Rafaella</option>
+                                <option value="Família">Família</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="recorrente-check">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="formRecorrente">
+                            <span class="material-icons-round" style="font-size:1.1rem">repeat</span>
+                            Despesa recorrente
+                        </label>
                     </div>
 
                     <button type="submit" class="btn-submit">
@@ -536,6 +571,98 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Orçamento por Categoria -->
+            <div class="config-section">
+                <h2 class="section-title">
+                    <span class="material-icons-round">account_balance</span>
+                    Orçamento por Categoria
+                </h2>
+                <p class="config-description">Defina limites mensais para cada categoria de despesa.</p>
+                <div class="budget-grid">
+                    <div class="budget-item">
+                        <label>Alimentação</label>
+                        <div class="input-money"><span>R$</span><input type="number" class="budget-input" data-category="Alimentação" step="0.01" placeholder="0,00"></div>
+                    </div>
+                    <div class="budget-item">
+                        <label>Moradia</label>
+                        <div class="input-money"><span>R$</span><input type="number" class="budget-input" data-category="Moradia" step="0.01" placeholder="0,00"></div>
+                    </div>
+                    <div class="budget-item">
+                        <label>Transporte</label>
+                        <div class="input-money"><span>R$</span><input type="number" class="budget-input" data-category="Transporte" step="0.01" placeholder="0,00"></div>
+                    </div>
+                    <div class="budget-item">
+                        <label>Serviços</label>
+                        <div class="input-money"><span>R$</span><input type="number" class="budget-input" data-category="Serviços" step="0.01" placeholder="0,00"></div>
+                    </div>
+                    <div class="budget-item">
+                        <label>Internet/TV</label>
+                        <div class="input-money"><span>R$</span><input type="number" class="budget-input" data-category="Internet/TV" step="0.01" placeholder="0,00"></div>
+                    </div>
+                    <div class="budget-item">
+                        <label>Saúde</label>
+                        <div class="input-money"><span>R$</span><input type="number" class="budget-input" data-category="Saúde" step="0.01" placeholder="0,00"></div>
+                    </div>
+                    <div class="budget-item">
+                        <label>Educação</label>
+                        <div class="input-money"><span>R$</span><input type="number" class="budget-input" data-category="Educação" step="0.01" placeholder="0,00"></div>
+                    </div>
+                    <div class="budget-item">
+                        <label>Lazer</label>
+                        <div class="input-money"><span>R$</span><input type="number" class="budget-input" data-category="Lazer" step="0.01" placeholder="0,00"></div>
+                    </div>
+                    <div class="budget-item">
+                        <label>Religioso</label>
+                        <div class="input-money"><span>R$</span><input type="number" class="budget-input" data-category="Religioso" step="0.01" placeholder="0,00"></div>
+                    </div>
+                    <div class="budget-item">
+                        <label>Veículo</label>
+                        <div class="input-money"><span>R$</span><input type="number" class="budget-input" data-category="Veículo" step="0.01" placeholder="0,00"></div>
+                    </div>
+                    <div class="budget-item">
+                        <label>Beleza</label>
+                        <div class="input-money"><span>R$</span><input type="number" class="budget-input" data-category="Beleza" step="0.01" placeholder="0,00"></div>
+                    </div>
+                    <div class="budget-item">
+                        <label>Cartão</label>
+                        <div class="input-money"><span>R$</span><input type="number" class="budget-input" data-category="Cartão" step="0.01" placeholder="0,00"></div>
+                    </div>
+                </div>
+                <button id="saveBudgetBtn" class="btn-submit">
+                    <span class="material-icons-round">save</span>
+                    Salvar Orçamento
+                </button>
+            </div>
+
+            <!-- Meta de Economia -->
+            <div class="config-section">
+                <h2 class="section-title">
+                    <span class="material-icons-round">flag</span>
+                    Meta de Economia
+                </h2>
+                <div class="meta-form-card" style="background:var(--white);border-radius:var(--radius);padding:1.5rem;box-shadow:var(--shadow-sm);border:1px solid var(--gray-100);margin-bottom:1rem">
+                    <div class="form-grid">
+                        <div class="form-field">
+                            <label>Nome da Meta</label>
+                            <input type="text" id="metaNome" placeholder="Ex: Viagem">
+                        </div>
+                        <div class="form-field">
+                            <label>Valor (R$)</label>
+                            <input type="number" id="metaValor" step="0.01" placeholder="0,00">
+                        </div>
+                        <div class="form-field">
+                            <label>Prazo (Mês/Ano)</label>
+                            <input type="month" id="metaPrazo">
+                        </div>
+                    </div>
+                    <button id="addMetaBtn" class="btn-submit" style="margin-top:1rem">
+                        <span class="material-icons-round">add</span>
+                        Adicionar Meta
+                    </button>
+                </div>
+                <div id="metasList" class="metas-list"></div>
+            </div>
         </section>
     </main>
 
@@ -578,6 +705,93 @@
         <div class="modal-actions">
             <button class="btn-outline" id="cancelPasswordBtn">Cancelar</button>
             <button class="btn-submit" id="confirmPasswordBtn">Salvar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Editar Transação -->
+<div id="editModal" class="modal">
+    <div class="modal-card modal-card-lg">
+        <h3><span class="material-icons-round">edit</span> Editar Transação</h3>
+        <input type="hidden" id="editId">
+        <div class="form-grid">
+            <div class="form-field">
+                <label>Data</label>
+                <input type="date" id="editData">
+            </div>
+            <div class="form-field">
+                <label>Valor (R$)</label>
+                <input type="number" id="editValor" step="0.01" min="0.01">
+            </div>
+            <div class="form-field">
+                <label>Tipo</label>
+                <select id="editTipo">
+                    <option value="Despesa">Despesa</option>
+                    <option value="Receita">Receita</option>
+                </select>
+            </div>
+            <div class="form-field">
+                <label>Categoria</label>
+                <select id="editCategoria">
+                    <option value="">Selecione...</option>
+                    <option value="Salário">Salário</option>
+                    <option value="Vale">Vale</option>
+                    <option value="Religioso">Religioso</option>
+                    <option value="Moradia">Moradia</option>
+                    <option value="Internet/TV">Internet/TV</option>
+                    <option value="Telefonia">Telefonia</option>
+                    <option value="Educação">Educação</option>
+                    <option value="Cartão">Cartão de Crédito</option>
+                    <option value="Serviços">Serviços</option>
+                    <option value="Saúde">Saúde</option>
+                    <option value="Transporte">Transporte</option>
+                    <option value="Alimentação">Alimentação</option>
+                    <option value="Lazer">Lazer</option>
+                    <option value="Beleza">Beleza</option>
+                    <option value="Veículo">Veículo</option>
+                    <option value="Outros">Outros</option>
+                </select>
+            </div>
+            <div class="form-field">
+                <label>Subcategoria</label>
+                <input type="text" id="editSubcategoria">
+            </div>
+            <div class="form-field full">
+                <label>Descrição</label>
+                <input type="text" id="editDescricao">
+            </div>
+            <div class="form-field">
+                <label>Forma de Pagamento</label>
+                <select id="editFonte">
+                    <option value="Pix">Pix</option>
+                    <option value="Débito">Débito</option>
+                    <option value="Crédito">Crédito</option>
+                    <option value="Boleto">Boleto</option>
+                    <option value="Dinheiro">Dinheiro</option>
+                    <option value="Transferência">Transferência</option>
+                </select>
+            </div>
+            <div class="form-field">
+                <label>Pagador</label>
+                <select id="editPagador">
+                    <option value="">Selecione...</option>
+                    <option value="Higor">Higor</option>
+                    <option value="Rafaella">Rafaella</option>
+                    <option value="Família">Família</option>
+                </select>
+            </div>
+            <div class="form-field">
+                <label>Status</label>
+                <select id="editStatus">
+                    <option value="Pago">Pago</option>
+                    <option value="Pendente">Pendente</option>
+                    <option value="Recebido">Recebido</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-outline" id="cancelEditBtn">Cancelar</button>
+            <button class="btn-submit" id="saveEditBtn">Salvar</button>
         </div>
     </div>
 </div>
