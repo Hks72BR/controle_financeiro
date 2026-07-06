@@ -74,6 +74,10 @@
                 <span class="material-icons-round">add_circle</span>
                 <span>Adicionar</span>
             </button>
+            <button class="nav-item" data-tab="bills">
+                <span class="material-icons-round">event_note</span>
+                <span>Contas do Mês</span>
+            </button>
             <button class="nav-item" data-tab="analytics">
                 <span class="material-icons-round">analytics</span>
                 <span>Analytics</span>
@@ -435,6 +439,144 @@
             </div>
         </section>
 
+        <!-- ========== CONTAS DO MÊS ========== -->
+        <section id="billsTab" class="tab-content">
+            <div class="page-header">
+                <div>
+                    <h1>Contas do Mês</h1>
+                    <p class="subtitle">Gerencie suas contas fixas mensais</p>
+                </div>
+                <div class="header-actions">
+                    <select id="billsMonth" class="select-month"></select>
+                </div>
+            </div>
+
+            <!-- Resumo de Contas -->
+            <div class="bills-summary">
+                <div class="bills-summary-card">
+                    <div class="bills-icon pending">
+                        <span class="material-icons-round">schedule</span>
+                    </div>
+                    <div class="bills-info">
+                        <span class="bills-label">Pendentes</span>
+                        <span class="bills-value" id="billsPending">R$ 0,00</span>
+                        <span class="bills-count" id="billsPendingCount">0 contas</span>
+                    </div>
+                </div>
+                <div class="bills-summary-card">
+                    <div class="bills-icon paid">
+                        <span class="material-icons-round">check_circle</span>
+                    </div>
+                    <div class="bills-info">
+                        <span class="bills-label">Pagas</span>
+                        <span class="bills-value" id="billsPaid">R$ 0,00</span>
+                        <span class="bills-count" id="billsPaidCount">0 contas</span>
+                    </div>
+                </div>
+                <div class="bills-summary-card">
+                    <div class="bills-icon overdue">
+                        <span class="material-icons-round">warning</span>
+                    </div>
+                    <div class="bills-info">
+                        <span class="bills-label">Vencidas</span>
+                        <span class="bills-value" id="billsOverdue">R$ 0,00</span>
+                        <span class="bills-count" id="billsOverdueCount">0 contas</span>
+                    </div>
+                </div>
+                <div class="bills-summary-card total">
+                    <div class="bills-icon total">
+                        <span class="material-icons-round">receipt_long</span>
+                    </div>
+                    <div class="bills-info">
+                        <span class="bills-label">Total do Mês</span>
+                        <span class="bills-value" id="billsTotal">R$ 0,00</span>
+                        <span class="bills-count" id="billsTotalCount">0 contas</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Adicionar Conta Fixa -->
+            <div class="add-bill-section">
+                <h2 class="section-title">
+                    <span class="material-icons-round">add_circle_outline</span>
+                    Adicionar Conta Fixa
+                </h2>
+                <form id="addBillForm" class="bill-form">
+                    <div class="form-grid">
+                        <div class="form-field">
+                            <label>Nome da Conta</label>
+                            <input type="text" id="billName" placeholder="Ex: Financiamento Caixa" required>
+                        </div>
+                        <div class="form-field">
+                            <label>Categoria</label>
+                            <select id="billCategory" required>
+                                <option value="">Selecione...</option>
+                                <option value="Moradia">Moradia</option>
+                                <option value="Serviços">Serviços (Água, Luz, Gás)</option>
+                                <option value="Internet/TV">Internet/TV</option>
+                                <option value="Telefonia">Telefonia</option>
+                                <option value="Educação">Educação</option>
+                                <option value="Cartão">Cartão de Crédito</option>
+                                <option value="Saúde">Saúde</option>
+                                <option value="Transporte">Transporte</option>
+                                <option value="Religioso">Religioso</option>
+                                <option value="Veículo">Veículo</option>
+                                <option value="Outros">Outros</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label>Valor Estimado (R$)</label>
+                            <input type="number" id="billValue" step="0.01" min="0.01" placeholder="0,00" required>
+                        </div>
+                        <div class="form-field">
+                            <label>Dia de Vencimento</label>
+                            <input type="number" id="billDueDay" min="1" max="31" placeholder="Ex: 5" required>
+                        </div>
+                        <div class="form-field">
+                            <label>Responsável</label>
+                            <select id="billResponsible">
+                                <option value="">Família</option>
+                                <option value="Higor">Higor</option>
+                                <option value="Rafaella">Rafaella</option>
+                            </select>
+                        </div>
+                        <div class="form-field">
+                            <label>Palavras-chave (para o bot)</label>
+                            <input type="text" id="billKeywords" placeholder="Ex: caixa, financiamento, habitação">
+                            <small class="field-hint">Separe por vírgula. O bot usará para identificar essa conta.</small>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-submit">
+                        <span class="material-icons-round">add</span>
+                        Adicionar Conta
+                    </button>
+                </form>
+            </div>
+
+            <!-- Lista de Contas do Mês -->
+            <div class="bills-list-section">
+                <h2 class="section-title">
+                    <span class="material-icons-round">list_alt</span>
+                    Contas deste Mês
+                </h2>
+                <div id="billsList" class="bills-list">
+                    <!-- Renderizado via JS -->
+                </div>
+            </div>
+
+            <!-- Contas Fixas Cadastradas -->
+            <div class="fixed-bills-section">
+                <h2 class="section-title">
+                    <span class="material-icons-round">repeat</span>
+                    Contas Fixas Cadastradas
+                    <span class="badge badge-info" id="fixedBillsCount">0</span>
+                </h2>
+                <div id="fixedBillsList" class="fixed-bills-list">
+                    <!-- Renderizado via JS -->
+                </div>
+            </div>
+        </section>
+
         <!-- ========== CONFIGURAÇÕES ========== -->
         <section id="configTab" class="tab-content">
             <div class="page-header">
@@ -685,6 +827,10 @@
         <button class="mobile-nav-item" data-tab="add">
             <span class="material-icons-round">add_circle</span>
             <span>Novo</span>
+        </button>
+        <button class="mobile-nav-item" data-tab="bills">
+            <span class="material-icons-round">event_note</span>
+            <span>Contas</span>
         </button>
         <button class="mobile-nav-item" data-tab="analytics">
             <span class="material-icons-round">analytics</span>

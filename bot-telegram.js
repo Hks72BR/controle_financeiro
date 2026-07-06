@@ -11,7 +11,7 @@ const https = require('https');
 const http = require('http');
 const { PDFParse } = require('pdf-parse');
 const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, addDoc, serverTimestamp } = require('firebase/firestore');
+const { getFirestore, collection, addDoc, getDocs, serverTimestamp } = require('firebase/firestore');
 const { getAuth, signInWithEmailAndPassword } = require('firebase/auth');
 
 // ==================== FIREBASE ====================
@@ -59,6 +59,52 @@ if (!BOT_TOKEN) {
 if (!fs.existsSync(TEMP_DIR)) {
     fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
+
+// ==================== CONTAS FIXAS ====================
+
+let fixedBills = [];
+
+// Carregar contas fixas do Firestore
+async function loadFixedBills() {
+    try {
+        const snapshot = await getDocs(collection(db, 'fixedBills'));
+        fixedBills = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        console.log(`📋 ${fixedBills.length} contas fixas carregadas`);
+    } catch (err) {
+        console.error('Erro ao carregar contas fixas:', err.message);
+        fixedBills = [];
+    }
+}
+
+// Encontrar conta fixa que corresponde à transação
+function findMatchingFixedBill(descricao, categoria) {
+    if (fixedBills.length === 0) return null;
+    
+    const descLower = (descricao || '').toLowerCase();
+    const catLower = (categoria || '').toLowerCase();
+    const textoCompleto = `${descLower} ${catLower}`;
+    
+    for (const bill of fixedBills) {
+        if (!bill.keywords) continue;
+        
+        const keywords = bill.keywords.toLowerCase().split(',').map(k => k.trim()).filter(k => k);
+        
+        for (const keyword of keywords) {
+            if (textoCompleto.includes(keyword)) {
+                console.log(`🔗 Conta vinculada: "${keyword}" -> ${bill.name}`);
+                return bill;
+            }
+        }
+    }
+    
+    return null;
+}
+
+// Carregar contas fixas na inicialização
+loadFixedBills();
+
+// Recarregar contas fixas periodicamente (a cada 5 minutos)
+setInterval(loadFixedBills, 5 * 60 * 1000);
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
@@ -432,23 +478,33 @@ function limparDescricao(desc) {
 async function salvarRegistro(dados) {
     const descLimpa = limparDescricao(dados.descricao);
 
+    // Verificar se corresponde a alguma conta fixa
+    const matchedBill = findMatchingFixedBill(dados.descricao, dados.categoria);
+
     const transaction = {
         data: dados.data,
         tipo: dados.tipo || 'Despesa',
-        categoria: dados.categoria || 'Outros',
-        subcategoria: dados.subcategoria || 'Outros',
+        categoria: matchedBill ? matchedBill.category : (dados.categoria || 'Outros'),
+        subcategoria: matchedBill ? matchedBill.name : (dados.subcategoria || 'Outros'),
         descricao: descLimpa,
         valor: parseFloat((dados.valor || 0).toFixed(2)),
         fonte: dados.fonte || 'Débito',
-        pagador: dados.pagador || 'familia',
+        pagador: matchedBill?.responsible || dados.pagador || 'familia',
         status: 'Pago',
         createdAt: serverTimestamp(),
         createdBy: 'bot-telegram'
     };
 
+    // Se encontrou conta fixa, vincular
+    if (matchedBill) {
+        transaction.linkedBillId = matchedBill.id;
+        transaction.linkedBillName = matchedBill.name;
+    }
+
     try {
         await addDoc(collection(db, 'transactions'), transaction);
-        console.log(`✅ Firestore: ${descLimpa} - R$ ${transaction.valor}`);
+        const linkedMsg = matchedBill ? ` [🔗 ${matchedBill.name}]` : '';
+        console.log(`✅ Firestore: ${descLimpa} - R$ ${transaction.valor}${linkedMsg}`);
     } catch (err) {
         console.error('❌ Erro Firestore:', err.message);
     }
@@ -457,7 +513,7 @@ async function salvarRegistro(dados) {
     const linha = [dados.data, transaction.tipo, transaction.categoria, transaction.subcategoria, descLimpa, transaction.valor.toFixed(2), transaction.fonte, 'Pago'].join(',');
     try { fs.appendFileSync(CSV_FILE, '\n' + linha, 'utf-8'); } catch (e) { }
 
-    return linha;
+    return { linha, linkedBill: matchedBill };
 }
 
 // ==================== HANDLERS DO BOT ====================
@@ -621,8 +677,8 @@ bot.on('photo', async (msg) => {
             return;
         }
 
-        await salvarRegistro(dados);
-        await bot.editMessageText(formatarConfirmacao(dados),
+        const result = await salvarRegistro(dados);
+        await bot.editMessageText(formatarConfirmacao(dados, result.linkedBill),
             { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
         );
 
@@ -682,8 +738,8 @@ bot.on('document', async (msg) => {
             return;
         }
 
-        await salvarRegistro(dados);
-        await bot.editMessageText(formatarConfirmacao(dados),
+        const result = await salvarRegistro(dados);
+        await bot.editMessageText(formatarConfirmacao(dados, result.linkedBill),
             { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
         );
 
@@ -727,8 +783,8 @@ bot.on('message', async (msg) => {
             subcategoria: categoriaDetectada.subcategoria
         };
 
-        await salvarRegistro(dados);
-        bot.sendMessage(chatId, formatarConfirmacao(dados), { parse_mode: 'Markdown' });
+        const result = await salvarRegistro(dados);
+        bot.sendMessage(chatId, formatarConfirmacao(dados, result.linkedBill), { parse_mode: 'Markdown' });
     }
 });
 
@@ -739,15 +795,21 @@ function escapeMarkdown(text) {
     return String(text).replace(/([*_`\[\]()~>#+\-=|{}.!])/g, '\\$1');
 }
 
-function formatarConfirmacao(dados) {
-    return `✅ *Registrado automaticamente!*\n\n` +
+function formatarConfirmacao(dados, linkedBill = null) {
+    let msg = `✅ *Registrado automaticamente!*\n\n` +
         `💰 *Valor:* R$ ${dados.valor.toFixed(2)}\n` +
         `📅 *Data:* ${escapeMarkdown(dados.data)}\n` +
         `📝 *Descrição:* ${escapeMarkdown(dados.descricao)}\n` +
         `📁 *Categoria:* ${escapeMarkdown(dados.categoria)} > ${escapeMarkdown(dados.subcategoria)}\n` +
         `💳 *Pagamento:* ${escapeMarkdown(dados.fonte)}\n` +
-        `� *Pagador:* ${dados.pagador === 'higor' ? 'Higor' : dados.pagador === 'rafa' ? 'Rafaella' : 'Família'}\n` +
-        `�📊 *Tipo:* ${escapeMarkdown(dados.tipo)}`;
+        `👤 *Pagador:* ${dados.pagador === 'higor' ? 'Higor' : dados.pagador === 'rafa' ? 'Rafaella' : 'Família'}\n` +
+        `📊 *Tipo:* ${escapeMarkdown(dados.tipo)}`;
+    
+    if (linkedBill) {
+        msg += `\n\n🔗 *Conta vinculada:* ${escapeMarkdown(linkedBill.name)}`;
+    }
+    
+    return msg;
 }
 
 // ==================== INICIALIZAÇÃO ====================

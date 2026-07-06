@@ -22,6 +22,8 @@ Chart.defaults.plugins.legend.labels.color = '#E8E6E3';
 const TRANSACTIONS_COL = 'transactions';
 const CONFIG_COL = 'config';
 const USERS_COL = 'users';
+const FIXED_BILLS_COL = 'fixedBills';
+const MONTHLY_BILLS_COL = 'monthlyBills';
 
 // ==================== STATE ====================
 const USER_MAP = {
@@ -42,11 +44,14 @@ let charts = {};
 let unsubscribe = null;
 let budgets = {};
 let metas = [];
+let fixedBills = [];
+let monthlyBills = [];
 
 // ==================== INIT ====================
 function init() {
     loadConfigFromFirestore();
     setupEventListeners();
+    setupBillsListeners();
 }
 
 // ==================== FIREBASE DATA ====================
@@ -190,7 +195,7 @@ function enterApp(userKey, userName) {
     document.getElementById('currentUser').textContent = currentUser;
     document.getElementById('userAvatar').textContent = currentUser[0];
     startRealtimeSync();
-    Promise.all([loadConfigFromFirestore(), loadBudgetsFromFirestore(), loadMetasFromFirestore()]).then(() => {
+    Promise.all([loadConfigFromFirestore(), loadBudgetsFromFirestore(), loadMetasFromFirestore(), loadFixedBillsFromFirestore()]).then(() => {
         renderDashboard();
         checkSalaryAfterLogin(); // Verificar se é dia de salário
     });
@@ -266,6 +271,7 @@ function switchTab(tabName) {
         case 'dashboard': renderDashboard(); break;
         case 'transactions': renderTransactions(); break;
         case 'analytics': renderAnalytics(); break;
+        case 'bills': renderBillsTab(); break;
         case 'config': renderConfig(); break;
     }
 }
@@ -984,6 +990,357 @@ function getPagadorBadge(pagador) {
     if (!pagador) return '';
     const cls = pagador === 'Higor' ? 'higor' : pagador === 'Rafaella' ? 'rafa' : 'familia';
     return ` <span class="pagador-badge ${cls}"><span class="dot"></span>${pagador}</span>`;
+}
+
+// ==================== CONTAS DO MÊS ====================
+
+// Carregar contas fixas do Firestore
+async function loadFixedBillsFromFirestore() {
+    try {
+        const snapshot = await db.collection(FIXED_BILLS_COL).orderBy('dueDay').get();
+        fixedBills = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderFixedBills();
+        generateMonthlyBills();
+    } catch (err) {
+        console.error('Erro ao carregar contas fixas:', err);
+    }
+}
+
+// Adicionar conta fixa
+async function addFixedBill(bill) {
+    try {
+        const docRef = await db.collection(FIXED_BILLS_COL).add({
+            ...bill,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdBy: currentUser
+        });
+        showToast('Conta fixa adicionada!', 'success');
+        await loadFixedBillsFromFirestore();
+        return docRef.id;
+    } catch (err) {
+        console.error('Erro ao adicionar conta:', err);
+        showToast('Erro ao adicionar conta', 'error');
+        return null;
+    }
+}
+
+// Deletar conta fixa
+async function deleteFixedBill(billId) {
+    if (!confirm('Excluir esta conta fixa?')) return;
+    try {
+        await db.collection(FIXED_BILLS_COL).doc(billId).delete();
+        showToast('Conta removida', 'success');
+        await loadFixedBillsFromFirestore();
+    } catch (err) {
+        console.error('Erro ao deletar conta:', err);
+        showToast('Erro ao remover', 'error');
+    }
+}
+
+// Gerar contas mensais baseado nas fixas
+function generateMonthlyBills() {
+    const monthSelect = document.getElementById('billsMonth');
+    if (!monthSelect) return;
+    
+    const selectedMonth = monthSelect.value || getCurrentYearMonth();
+    const [year, month] = selectedMonth.split('-').map(Number);
+    
+    // Criar instâncias mensais das contas fixas
+    monthlyBills = fixedBills.map(bill => {
+        // Verificar se já existe pagamento vinculado
+        const linkedTransaction = findLinkedTransaction(bill, year, month);
+        
+        // Calcular data de vencimento
+        const dueDate = new Date(year, month - 1, Math.min(bill.dueDay, new Date(year, month, 0).getDate()));
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        let status = 'pending';
+        if (linkedTransaction) {
+            status = 'paid';
+        } else if (dueDate < today) {
+            status = 'overdue';
+        }
+        
+        return {
+            ...bill,
+            monthKey: selectedMonth,
+            dueDate: dueDate.toISOString().split('T')[0],
+            status: status,
+            linkedTransaction: linkedTransaction
+        };
+    });
+    
+    renderBills();
+    updateBillsSummary();
+}
+
+// Encontrar transação vinculada a uma conta
+function findLinkedTransaction(bill, year, month) {
+    const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+    
+    // Procurar por transação com linkedBillId
+    let linked = transactions.find(t => 
+        t.linkedBillId === bill.id && 
+        t.data && t.data.startsWith(monthStr)
+    );
+    
+    // Se não encontrou por ID, tentar por palavras-chave
+    if (!linked && bill.keywords) {
+        const keywords = bill.keywords.toLowerCase().split(',').map(k => k.trim()).filter(k => k);
+        linked = transactions.find(t => {
+            if (!t.data || !t.data.startsWith(monthStr)) return false;
+            if (t.tipo !== 'Despesa') return false;
+            
+            const descLower = (t.descricao || '').toLowerCase();
+            const catLower = (t.categoria || '').toLowerCase();
+            
+            return keywords.some(kw => descLower.includes(kw) || catLower.includes(kw));
+        });
+    }
+    
+    return linked;
+}
+
+// Renderizar resumo de contas
+function updateBillsSummary() {
+    const pending = monthlyBills.filter(b => b.status === 'pending');
+    const paid = monthlyBills.filter(b => b.status === 'paid');
+    const overdue = monthlyBills.filter(b => b.status === 'overdue');
+    
+    const pendingTotal = pending.reduce((s, b) => s + (parseFloat(b.value) || 0), 0);
+    const paidTotal = paid.reduce((s, b) => s + (b.linkedTransaction ? parseFloat(b.linkedTransaction.valor) : parseFloat(b.value) || 0), 0);
+    const overdueTotal = overdue.reduce((s, b) => s + (parseFloat(b.value) || 0), 0);
+    const total = monthlyBills.reduce((s, b) => s + (parseFloat(b.value) || 0), 0);
+    
+    document.getElementById('billsPending').textContent = formatCurrency(pendingTotal);
+    document.getElementById('billsPendingCount').textContent = `${pending.length} conta${pending.length !== 1 ? 's' : ''}`;
+    
+    document.getElementById('billsPaid').textContent = formatCurrency(paidTotal);
+    document.getElementById('billsPaidCount').textContent = `${paid.length} conta${paid.length !== 1 ? 's' : ''}`;
+    
+    document.getElementById('billsOverdue').textContent = formatCurrency(overdueTotal);
+    document.getElementById('billsOverdueCount').textContent = `${overdue.length} conta${overdue.length !== 1 ? 's' : ''}`;
+    
+    document.getElementById('billsTotal').textContent = formatCurrency(total);
+    document.getElementById('billsTotalCount').textContent = `${monthlyBills.length} conta${monthlyBills.length !== 1 ? 's' : ''}`;
+}
+
+// Renderizar lista de contas do mês
+function renderBills() {
+    const container = document.getElementById('billsList');
+    if (!container) return;
+    
+    if (monthlyBills.length === 0) {
+        container.innerHTML = `
+            <div class="bills-empty">
+                <span class="material-icons-round">receipt_long</span>
+                <p>Nenhuma conta cadastrada</p>
+                <p>Adicione suas contas fixas acima</p>
+            </div>`;
+        return;
+    }
+    
+    // Ordenar: vencidas primeiro, depois pendentes, depois pagas
+    const sorted = [...monthlyBills].sort((a, b) => {
+        const statusOrder = { overdue: 0, pending: 1, paid: 2 };
+        if (statusOrder[a.status] !== statusOrder[b.status]) {
+            return statusOrder[a.status] - statusOrder[b.status];
+        }
+        return new Date(a.dueDate) - new Date(b.dueDate);
+    });
+    
+    container.innerHTML = sorted.map(bill => {
+        const statusIcon = bill.status === 'paid' ? 'check_circle' : 
+                          bill.status === 'overdue' ? 'warning' : 'schedule';
+        
+        const actualValue = bill.linkedTransaction ? bill.linkedTransaction.valor : bill.value;
+        const dueFormatted = formatDateBR(bill.dueDate);
+        const dueDateObj = new Date(bill.dueDate + 'T00:00:00');
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const daysUntil = Math.ceil((dueDateObj - today) / (1000 * 60 * 60 * 24));
+        
+        let dueText = `Vence ${dueFormatted}`;
+        if (bill.status === 'paid') {
+            dueText = `Pago em ${bill.linkedTransaction ? formatDateBR(bill.linkedTransaction.data) : dueFormatted}`;
+        } else if (bill.status === 'overdue') {
+            dueText = `Venceu há ${Math.abs(daysUntil)} dia${Math.abs(daysUntil) !== 1 ? 's' : ''}`;
+        } else if (daysUntil === 0) {
+            dueText = 'Vence HOJE';
+        } else if (daysUntil === 1) {
+            dueText = 'Vence amanhã';
+        } else if (daysUntil > 0 && daysUntil <= 7) {
+            dueText = `Vence em ${daysUntil} dias`;
+        }
+        
+        return `
+            <div class="bill-item ${bill.status}">
+                <div class="bill-status-icon">
+                    <span class="material-icons-round">${statusIcon}</span>
+                </div>
+                <div class="bill-details">
+                    <div class="bill-name">
+                        ${escapeHtml(bill.name)}
+                        ${bill.linkedTransaction ? '<span class="bill-linked"><span class="material-icons-round" style="font-size:12px">link</span> Vinculado</span>' : ''}
+                    </div>
+                    <div class="bill-meta">
+                        <span><span class="material-icons-round">category</span> ${escapeHtml(bill.category)}</span>
+                        ${bill.responsible ? `<span><span class="material-icons-round">person</span> ${escapeHtml(bill.responsible)}</span>` : ''}
+                    </div>
+                </div>
+                <div class="bill-value-col">
+                    <div class="bill-value">${formatCurrency(actualValue)}</div>
+                    <div class="bill-due ${bill.status === 'overdue' ? 'overdue' : ''}">${dueText}</div>
+                </div>
+                <div class="bill-actions">
+                    ${bill.status !== 'paid' ? `
+                        <button onclick="markBillAsPaid('${bill.id}')" title="Marcar como pago">
+                            <span class="material-icons-round">check</span>
+                        </button>
+                    ` : ''}
+                </div>
+            </div>`;
+    }).join('');
+}
+
+// Renderizar contas fixas cadastradas
+function renderFixedBills() {
+    const container = document.getElementById('fixedBillsList');
+    const countBadge = document.getElementById('fixedBillsCount');
+    
+    if (!container) return;
+    
+    countBadge.textContent = fixedBills.length;
+    
+    if (fixedBills.length === 0) {
+        container.innerHTML = `
+            <div class="bills-empty">
+                <span class="material-icons-round">playlist_add</span>
+                <p>Nenhuma conta fixa cadastrada</p>
+            </div>`;
+        return;
+    }
+    
+    container.innerHTML = fixedBills.map(bill => {
+        const keywords = bill.keywords ? bill.keywords.split(',').map(k => k.trim()).filter(k => k) : [];
+        
+        return `
+            <div class="fixed-bill-card">
+                <div class="fixed-bill-header">
+                    <span class="fixed-bill-name">${escapeHtml(bill.name)}</span>
+                    <span class="fixed-bill-category">${escapeHtml(bill.category)}</span>
+                </div>
+                <div class="fixed-bill-info">
+                    <span class="fixed-bill-value">${formatCurrency(bill.value)}</span>
+                    <span class="fixed-bill-due">
+                        <span class="material-icons-round" style="font-size:16px;vertical-align:middle">event</span>
+                        Dia ${bill.dueDay}
+                    </span>
+                </div>
+                ${keywords.length > 0 ? `
+                    <div class="fixed-bill-keywords">
+                        <span class="material-icons-round" style="font-size:14px">label</span>
+                        ${keywords.map(k => `<span class="keyword-tag">${escapeHtml(k)}</span>`).join('')}
+                    </div>
+                ` : ''}
+                <div class="fixed-bill-actions">
+                    <button class="delete-btn" onclick="deleteFixedBill('${bill.id}')">
+                        <span class="material-icons-round">delete</span>
+                        Excluir
+                    </button>
+                </div>
+            </div>`;
+    }).join('');
+}
+
+// Marcar conta como paga manualmente
+async function markBillAsPaid(billId) {
+    const bill = fixedBills.find(b => b.id === billId);
+    if (!bill) return;
+    
+    const valor = prompt(`Valor pago para "${bill.name}":`, bill.value);
+    if (!valor) return;
+    
+    // Criar transação
+    const transaction = {
+        tipo: 'Despesa',
+        data: new Date().toISOString().split('T')[0],
+        categoria: bill.category,
+        subcategoria: bill.name,
+        descricao: `${bill.name} (Conta Fixa)`,
+        valor: parseFloat(valor),
+        fonte: 'Pix',
+        status: 'Pago',
+        pagador: bill.responsible || currentUser,
+        linkedBillId: billId
+    };
+    
+    const ok = await addTransactionToFirestore(transaction);
+    if (ok) {
+        showToast('Pagamento registrado!', 'success');
+        generateMonthlyBills();
+    }
+}
+
+// Handler do formulário de adicionar conta
+function handleAddBill(e) {
+    e.preventDefault();
+    
+    const bill = {
+        name: document.getElementById('billName').value.trim(),
+        category: document.getElementById('billCategory').value,
+        value: parseFloat(document.getElementById('billValue').value) || 0,
+        dueDay: parseInt(document.getElementById('billDueDay').value) || 1,
+        responsible: document.getElementById('billResponsible').value || null,
+        keywords: document.getElementById('billKeywords').value.trim().toLowerCase()
+    };
+    
+    if (!bill.name || !bill.category || !bill.value) {
+        showToast('Preencha todos os campos obrigatórios', 'error');
+        return;
+    }
+    
+    addFixedBill(bill);
+    e.target.reset();
+}
+
+// Renderizar aba de contas
+function renderBillsTab() {
+    populateBillsMonthSelector();
+    generateMonthlyBills();
+}
+
+// Popular seletor de mês para contas
+function populateBillsMonthSelector() {
+    const select = document.getElementById('billsMonth');
+    if (!select) return;
+    
+    const months = getAvailableMonths();
+    const current = getCurrentYearMonth();
+    
+    select.innerHTML = months.map(m => 
+        `<option value="${m}" ${m === current ? 'selected' : ''}>${formatMonthName(m)}</option>`
+    ).join('');
+}
+
+// Obter ano-mês atual
+function getCurrentYearMonth() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// Setup event listeners das contas
+function setupBillsListeners() {
+    const form = document.getElementById('addBillForm');
+    if (form) {
+        form.addEventListener('submit', handleAddBill);
+    }
+    
+    const monthSelect = document.getElementById('billsMonth');
+    if (monthSelect) {
+        monthSelect.addEventListener('change', generateMonthlyBills);
+    }
 }
 
 // ==================== LEMBRETE DE SALÁRIO ====================
