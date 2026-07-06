@@ -2,8 +2,12 @@
   "name": "controle-financeiro",
   "version": "1.0.0",
   "description": "PWA de controle financeiro pessoal",
-  "main": "index.html",
+  "main": "bot-telegram.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
+    "start": "node bot-telegram.js",
     "dev": "python -m http.server 8000",
     "bot": "node bot-telegram.js",
     "build": "echo 'No build needed - static site'",

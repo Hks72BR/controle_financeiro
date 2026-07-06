@@ -752,6 +752,67 @@ function formatarConfirmacao(dados) {
 
 // ==================== INICIALIZAÇÃO ====================
 
+// ==================== HEALTH CHECK SERVER ====================
+
+// PORT é usado por plataformas cloud (Railway, Render, etc)
+const HEALTH_PORT = process.env.PORT || process.env.HEALTH_PORT || 3000;
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID; // Seu chat ID para receber notificações
+
+let botStats = {
+    startTime: new Date(),
+    lastActivity: null,
+    messagesProcessed: 0,
+    errorsCount: 0,
+    isHealthy: true
+};
+
+// Servidor HTTP para health check (monitoramento externo)
+const healthServer = http.createServer((req, res) => {
+    if (req.url === '/health' || req.url === '/') {
+        const uptime = Math.floor((Date.now() - botStats.startTime.getTime()) / 1000);
+        const status = {
+            status: botStats.isHealthy ? 'ok' : 'unhealthy',
+            uptime: uptime,
+            uptimeFormatted: `${Math.floor(uptime/3600)}h ${Math.floor((uptime%3600)/60)}m ${uptime%60}s`,
+            startTime: botStats.startTime.toISOString(),
+            lastActivity: botStats.lastActivity ? botStats.lastActivity.toISOString() : null,
+            messagesProcessed: botStats.messagesProcessed,
+            errorsCount: botStats.errorsCount,
+            timestamp: new Date().toISOString()
+        };
+        
+        res.writeHead(botStats.isHealthy ? 200 : 503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(status, null, 2));
+    } else {
+        res.writeHead(404);
+        res.end('Not Found');
+    }
+});
+
+healthServer.listen(HEALTH_PORT, () => {
+    console.log(`🏥 Health check ativo em http://localhost:${HEALTH_PORT}/health`);
+});
+
+// Atualizar estatísticas a cada mensagem processada
+function updateStats(success = true) {
+    botStats.lastActivity = new Date();
+    botStats.messagesProcessed++;
+    if (!success) botStats.errorsCount++;
+}
+
+// Notificar admin via Telegram quando bot inicia/para
+async function notifyAdmin(message) {
+    if (ADMIN_CHAT_ID) {
+        try {
+            await bot.sendMessage(ADMIN_CHAT_ID, message, { parse_mode: 'Markdown' });
+        } catch (err) {
+            console.error('Falha ao notificar admin:', err.message);
+        }
+    }
+}
+
+// ==================== INICIALIZAÇÃO ====================
+
 console.log('');
 console.log('╔═══════════════════════════════════════════════╗');
 console.log('║  🤖 Bot Controle Financeiro - Modo Autônomo   ║');
@@ -760,13 +821,35 @@ console.log('║  📸 Fotos    ✅ Suportado                     ║');
 console.log('║  📄 PDFs     ✅ Suportado                     ║');
 console.log('║  📎 Docs     ✅ Suportado                     ║');
 console.log('║  🏷️  Auto-Cat ✅ Ativo                        ║');
+console.log('║  🏥 Health   ✅ Porta ' + HEALTH_PORT + '                      ║');
 console.log('║                                               ║');
 console.log('║  Ctrl+C para encerrar                         ║');
 console.log('╚═══════════════════════════════════════════════╝');
 console.log('');
 
-process.on('SIGINT', () => {
+// Notificar que o bot iniciou
+setTimeout(() => {
+    notifyAdmin('✅ *Bot Iniciado*\n\n🕐 ' + new Date().toLocaleString('pt-BR') + '\n🏥 Health check ativo');
+}, 2000);
+
+process.on('SIGINT', async () => {
     console.log('\n🛑 Bot encerrado.');
+    await notifyAdmin('🛑 *Bot Encerrado*\n\n🕐 ' + new Date().toLocaleString('pt-BR'));
     bot.stopPolling();
+    healthServer.close();
     process.exit(0);
+});
+
+// Capturar erros não tratados
+process.on('uncaughtException', async (err) => {
+    console.error('❌ Erro crítico:', err);
+    botStats.isHealthy = false;
+    botStats.errorsCount++;
+    await notifyAdmin('❌ *Erro Crítico no Bot*\n\n```\n' + err.message + '\n```');
+});
+
+process.on('unhandledRejection', async (reason) => {
+    console.error('❌ Promise rejeitada:', reason);
+    botStats.errorsCount++;
+    await notifyAdmin('⚠️ *Erro no Bot*\n\n```\n' + String(reason) + '\n```');
 });
