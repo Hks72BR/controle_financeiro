@@ -190,7 +190,10 @@ function enterApp(userKey, userName) {
     document.getElementById('currentUser').textContent = currentUser;
     document.getElementById('userAvatar').textContent = currentUser[0];
     startRealtimeSync();
-    Promise.all([loadConfigFromFirestore(), loadBudgetsFromFirestore(), loadMetasFromFirestore()]).then(() => renderDashboard());
+    Promise.all([loadConfigFromFirestore(), loadBudgetsFromFirestore(), loadMetasFromFirestore()]).then(() => {
+        renderDashboard();
+        checkSalaryAfterLogin(); // Verificar se é dia de salário
+    });
     showToast(`Bem-vindo(a), ${currentUser}!`, 'success');
 }
 
@@ -983,5 +986,221 @@ function getPagadorBadge(pagador) {
     return ` <span class="pagador-badge ${cls}"><span class="dot"></span>${pagador}</span>`;
 }
 
+// ==================== LEMBRETE DE SALÁRIO ====================
+
+// Configuração de salário por usuário (salvo no Firestore)
+let salaryConfig = {
+    higor: { salario: 0, antecipacao: 0 },
+    rafa: { salario: 0, antecipacao: 0 }
+};
+
+// Calcular o 5º dia útil do mês
+function getNthBusinessDay(year, month, n) {
+    let count = 0;
+    let day = 1;
+    
+    while (count < n) {
+        const date = new Date(year, month, day);
+        const dayOfWeek = date.getDay();
+        
+        // Dia útil = segunda a sexta (1-5)
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            count++;
+            if (count === n) return day;
+        }
+        day++;
+    }
+    return day;
+}
+
+// Verificar se hoje é dia de registrar salário
+function checkSalaryDay() {
+    const today = new Date();
+    const currentDay = today.getDate();
+    const currentMonth = today.getMonth();
+    const currentYear = today.getFullYear();
+    
+    const fifthBusinessDay = getNthBusinessDay(currentYear, currentMonth, 5);
+    
+    // Verificar se é dia 20 (antecipação) ou 5º dia útil (salário)
+    const isAntecipacaoDay = currentDay === 20;
+    const isSalarioDay = currentDay === fifthBusinessDay;
+    
+    // Verificar se já registrou hoje
+    const lastCheck = localStorage.getItem('lastSalaryCheck_' + currentUserKey);
+    const todayStr = today.toISOString().split('T')[0];
+    
+    if (lastCheck === todayStr) {
+        return null; // Já verificou hoje
+    }
+    
+    if (isAntecipacaoDay) {
+        return { type: 'antecipacao', day: 20, fifthDay: fifthBusinessDay };
+    } else if (isSalarioDay) {
+        return { type: 'salario', day: fifthBusinessDay, fifthDay: fifthBusinessDay };
+    }
+    
+    return null;
+}
+
+// Carregar configuração de salário
+async function loadSalaryConfig() {
+    try {
+        const doc = await db.collection(CONFIG_COL).doc('salary').get();
+        if (doc.exists) {
+            salaryConfig = doc.data();
+        }
+    } catch (err) {
+        console.error('Erro ao carregar config salário:', err);
+    }
+}
+
+// Salvar configuração de salário
+async function saveSalaryConfig() {
+    try {
+        await db.collection(CONFIG_COL).doc('salary').set(salaryConfig);
+    } catch (err) {
+        console.error('Erro ao salvar config salário:', err);
+    }
+}
+
+// Mostrar modal de lembrete
+function showSalaryReminder(info) {
+    const modal = document.getElementById('salaryModal');
+    const typeSelect = document.getElementById('salaryType');
+    const valueInput = document.getElementById('salaryValue');
+    const dateInput = document.getElementById('salaryDate');
+    const pagadorSelect = document.getElementById('salaryPagador');
+    const subtitle = document.getElementById('salaryModalSubtitle');
+    const dateType = document.getElementById('salaryDateType');
+    const dateInfo = document.getElementById('salaryDateInfo');
+    
+    const today = new Date();
+    dateInput.value = today.toISOString().split('T')[0];
+    
+    // Selecionar o tipo correto
+    typeSelect.value = info.type;
+    
+    // Preencher valor salvo
+    const userConfig = salaryConfig[currentUserKey] || {};
+    valueInput.value = info.type === 'antecipacao' ? (userConfig.antecipacao || '') : (userConfig.salario || '');
+    
+    // Selecionar pagador atual
+    pagadorSelect.value = currentUser;
+    
+    // Atualizar textos
+    if (info.type === 'antecipacao') {
+        subtitle.textContent = 'Hoje é dia 20 - dia de receber a antecipação!';
+        dateType.textContent = '💰 Antecipação do Salário';
+        dateInfo.textContent = 'Registre o valor que caiu na sua conta hoje.';
+    } else {
+        subtitle.textContent = `Hoje é o 5º dia útil (dia ${info.day}) - dia de receber o salário!`;
+        dateType.textContent = '💵 Salário do Mês';
+        dateInfo.textContent = 'Registre o valor líquido que você recebeu.';
+    }
+    
+    modal.classList.add('active');
+}
+
+// Atualizar valor quando muda o tipo
+function updateSalaryValue() {
+    const typeSelect = document.getElementById('salaryType');
+    const valueInput = document.getElementById('salaryValue');
+    const userConfig = salaryConfig[currentUserKey] || {};
+    
+    valueInput.value = typeSelect.value === 'antecipacao' 
+        ? (userConfig.antecipacao || '') 
+        : (userConfig.salario || '');
+}
+
+// Registrar receita de salário
+async function registerSalary() {
+    const typeSelect = document.getElementById('salaryType');
+    const valueInput = document.getElementById('salaryValue');
+    const dateInput = document.getElementById('salaryDate');
+    const pagadorSelect = document.getElementById('salaryPagador');
+    const saveConfig = document.getElementById('saveSalaryConfig').checked;
+    
+    const valor = parseFloat(valueInput.value);
+    if (!valor || valor <= 0) {
+        showToast('Digite um valor válido', 'error');
+        return;
+    }
+    
+    const tipo = typeSelect.value;
+    const descricao = tipo === 'antecipacao' ? 'Antecipação Salarial' : 'Salário';
+    const subcategoria = tipo === 'antecipacao' ? 'Antecipação' : 'Salário Mensal';
+    
+    // Salvar transação
+    const transaction = {
+        tipo: 'Receita',
+        data: dateInput.value,
+        categoria: 'Salário',
+        subcategoria: subcategoria,
+        descricao: descricao,
+        valor: valor,
+        fonte: 'Transferência',
+        status: 'Recebido',
+        pagador: pagadorSelect.value
+    };
+    
+    const ok = await addTransactionToFirestore(transaction);
+    
+    if (ok) {
+        // Salvar valor para próximos meses
+        if (saveConfig) {
+            if (!salaryConfig[currentUserKey]) {
+                salaryConfig[currentUserKey] = {};
+            }
+            if (tipo === 'antecipacao') {
+                salaryConfig[currentUserKey].antecipacao = valor;
+            } else {
+                salaryConfig[currentUserKey].salario = valor;
+            }
+            await saveSalaryConfig();
+        }
+        
+        // Marcar como verificado hoje
+        localStorage.setItem('lastSalaryCheck_' + currentUserKey, new Date().toISOString().split('T')[0]);
+        
+        document.getElementById('salaryModal').classList.remove('active');
+        showToast(`${descricao} de ${formatCurrency(valor)} registrado!`, 'success');
+    }
+}
+
+// Dispensar lembrete
+function dismissSalaryReminder() {
+    document.getElementById('salaryModal').classList.remove('active');
+}
+
+// Pular (já registrou)
+function skipSalaryReminder() {
+    localStorage.setItem('lastSalaryCheck_' + currentUserKey, new Date().toISOString().split('T')[0]);
+    document.getElementById('salaryModal').classList.remove('active');
+    showToast('Ok! Não vou perguntar mais hoje.', 'info');
+}
+
+// Setup dos event listeners do modal de salário
+function setupSalaryListeners() {
+    document.getElementById('confirmSalaryBtn').addEventListener('click', registerSalary);
+    document.getElementById('dismissSalaryBtn').addEventListener('click', dismissSalaryReminder);
+    document.getElementById('skipSalaryBtn').addEventListener('click', skipSalaryReminder);
+    document.getElementById('salaryType').addEventListener('change', updateSalaryValue);
+}
+
+// Verificar salário após login
+async function checkSalaryAfterLogin() {
+    await loadSalaryConfig();
+    
+    // Aguardar um pouco para não atrapalhar o carregamento
+    setTimeout(() => {
+        const salaryInfo = checkSalaryDay();
+        if (salaryInfo) {
+            showSalaryReminder(salaryInfo);
+        }
+    }, 2000);
+}
+
 // ==================== INIT ====================
 init();
+setupSalaryListeners();
