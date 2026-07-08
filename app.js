@@ -306,6 +306,8 @@ function populateMonthSelectors() {
         const prev = select.value;
         select.innerHTML = id === 'filterMonth' ? '<option value="all">Todos os meses</option>' : '';
         months.forEach(m => {
+            // Só adicionar se o mês é válido (formato YYYY-MM)
+            if (!/^\d{4}-\d{2}$/.test(m)) return;
             const opt = document.createElement('option');
             opt.value = m;
             opt.textContent = formatMonthName(m);
@@ -322,15 +324,27 @@ function getAvailableMonths() {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         monthsSet.add(d.toISOString().slice(0, 7));
     }
-    transactions.forEach(t => { if (t.data) monthsSet.add(t.data.slice(0, 7)); });
+    // Filtrar apenas datas válidas no formato YYYY-MM-DD
+    transactions.forEach(t => { 
+        if (t.data && /^\d{4}-\d{2}-\d{2}/.test(t.data)) {
+            const month = t.data.slice(0, 7);
+            if (/^\d{4}-\d{2}$/.test(month)) {
+                monthsSet.add(month); 
+            }
+        }
+    });
     return Array.from(monthsSet).sort().reverse();
 }
 
 function formatMonthName(ym) {
+    // Validar formato YYYY-MM
+    if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return ym || '';
     const [y, m] = ym.split('-');
     const names = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
         'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-    return `${names[parseInt(m) - 1]} ${y}`;
+    const monthIndex = parseInt(m) - 1;
+    if (monthIndex < 0 || monthIndex > 11) return ym;
+    return `${names[monthIndex]} ${y}`;
 }
 
 // ==================== DASHBOARD ====================
