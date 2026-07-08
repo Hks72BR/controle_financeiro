@@ -497,10 +497,10 @@ function gerarResumoExtrato(transacoes, salvos, erros, totalDespesas, totalRecei
     msg += `  💵 Saldo: R$ ${(totalReceitas - totalDespesas).toFixed(2)}\n\n`;
     
     if (topCategorias) {
-        msg += `📊 *Top Categorias \\(Despesas\\):*\n${topCategorias}\n\n`;
+        msg += `📊 *Top Categorias (Despesas):*\n${topCategorias}\n\n`;
     }
     
-    msg += `_Todas as transações foram categorizadas automaticamente e salvas no app\\!_`;
+    msg += `_Todas as transações foram categorizadas automaticamente e salvas no app!_`;
     
     return msg;
 }
@@ -1000,7 +1000,7 @@ bot.on('photo', async (msg) => {
         if (detectarExtratoBancario(texto)) {
             const resultado = await processarExtratoBancario(texto, chatId, statusMsg, bot);
             await bot.editMessageText(resultado.mensagem,
-                { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'MarkdownV2' }
+                { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
             );
             return;
         }
@@ -1071,7 +1071,7 @@ bot.on('document', async (msg) => {
         if (detectarExtratoBancario(texto)) {
             const resultado = await processarExtratoBancario(texto, chatId, statusMsg, bot);
             await bot.editMessageText(resultado.mensagem,
-                { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'MarkdownV2' }
+                { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
             );
             return;
         }
