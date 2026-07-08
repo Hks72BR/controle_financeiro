@@ -111,6 +111,9 @@ const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 // ==================== AUTO-CATEGORIZAÇÃO ====================
 
 const REGRAS_CATEGORIA = [
+    // FGTS / Receitas especiais
+    { palavras: ['fgts', 'saque fgts', 'fgts aniversário', 'fgts aniversario', 'cp fgts'], categoria: 'Outros', subcategoria: 'FGTS' },
+    
     // Moradia
     { palavras: ['caixa economica', 'caixa econ', 'financiamento', 'parcela caixa', 'habitação'], categoria: 'Moradia', subcategoria: 'Financiamento' },
     { palavras: ['cury', 'mrv', 'construtora', 'incorporadora'], categoria: 'Moradia', subcategoria: 'Financiamento' },
@@ -332,9 +335,13 @@ function extrairTransacaoDeMatch(match, anoExtrato, mesExtrato) {
         const valor = parseValorBR(valorStr);
         if (!valor || valor <= 0) return null;
         
-        // Determinar tipo
+        // Determinar tipo - FGTS e outras entradas são Receita
+        const descLower = descricao.toLowerCase();
         const isCredito = valorStr.trim().startsWith('+') || 
-                         (!valorStr.includes('-') && /cr[ée]dito|entrada|dep[oó]sito|transfer[eê]ncia\s+recebida/i.test(descricao));
+                         (!valorStr.includes('-') && /cr[ée]dito|entrada|dep[oó]sito|transfer[eê]ncia\s+recebida|fgts|saque|resgate/i.test(descricao));
+        
+        // FGTS é sempre receita
+        const isFGTS = /fgts|saque.*fgts|cp\s*fgts/i.test(descricao);
         
         const data = `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
         
@@ -342,7 +349,7 @@ function extrairTransacaoDeMatch(match, anoExtrato, mesExtrato) {
             data: data,
             descricao: limparDescricaoExtrato(descricao),
             valor: Math.abs(valor),
-            tipo: isCredito ? 'Receita' : 'Despesa',
+            tipo: (isCredito || isFGTS) ? 'Receita' : 'Despesa',
             fonte: 'Débito'
         };
     } catch (e) {
@@ -399,7 +406,17 @@ function limparDescricaoExtrato(desc) {
         .replace(/[|;]/g, ' ')
         .replace(/^\d+\s*/, '') // Remover números no início
         .replace(/\s*\d+$/, '') // Remover números no final
+        // Remover códigos CNPJ/CPF (sequências de 8+ dígitos)
+        .replace(/\s+\d{8,}\s*/g, ' ')
+        .replace(/\s+\d{4,}\s+\d{4,}/g, ' ') // Remover padrões tipo "0000 0000"
+        .replace(/INTERNET BANKING PIX\s*/gi, 'PIX ') // Simplificar descrição PIX
+        .replace(/CP FGTS CICLOS\s*/gi, 'Saque FGTS ') // Limpar descrição FGTS
+        .replace(/\s+-\d+\s+/g, ' ') // Remover padrões tipo " -28 "
+        .replace(/\s+\d{2}\/\d{2}\/\d{2,4}\s*/g, ' ') // Remover datas extras na descrição
         .trim();
+    
+    // Remover números no final novamente (após outras limpezas)
+    limpa = limpa.replace(/\s+\d+$/, '').trim();
     
     // Limitar tamanho
     if (limpa.length > 60) {
@@ -418,22 +435,52 @@ async function processarExtratoBancario(texto, chatId, statusMsg, bot) {
         return { sucesso: false, mensagem: 'Não consegui identificar transações no extrato.' };
     }
     
+    // Remover duplicatas dentro do próprio extrato
+    const seen = new Set();
+    const transacoesUnicas = transacoes.filter(t => {
+        const key = `${t.data}|${t.descricao}|${t.valor}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+    
     // Atualizar status
     await bot.editMessageText(
         `📊 *Extrato detectado!*\n\n` +
-        `Encontrei *${transacoes.length} transações*.\n` +
-        `Processando e salvando...`,
+        `Encontrei *${transacoesUnicas.length} transações* (${transacoes.length - transacoesUnicas.length} duplicadas removidas).\n` +
+        `Verificando e salvando...`,
         { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
     );
     
-    // Salvar todas as transações
+    // Verificar transações existentes no banco para evitar duplicatas
+    let existingTransactions = [];
+    try {
+        const snapshot = await db.collection('transacoes').get();
+        existingTransactions = snapshot.docs.map(doc => {
+            const d = doc.data();
+            return `${d.data}|${d.descricao}|${d.valor}`;
+        });
+    } catch (e) {
+        console.log('[WARN] Não foi possível verificar duplicatas existentes:', e.message);
+    }
+    const existingSet = new Set(existingTransactions);
+    
+    // Salvar apenas transações novas
     let salvos = 0;
+    let pulados = 0;
     let erros = 0;
     let totalDespesas = 0;
     let totalReceitas = 0;
     const categorias = {};
     
-    for (const t of transacoes) {
+    for (const t of transacoesUnicas) {
+        // Verificar se já existe
+        const key = `${t.data}|${t.descricao}|${t.valor}`;
+        if (existingSet.has(key)) {
+            pulados++;
+            continue;
+        }
+        
         try {
             const result = await salvarRegistro({
                 data: t.data,
@@ -449,6 +496,7 @@ async function processarExtratoBancario(texto, chatId, statusMsg, bot) {
             });
             
             salvos++;
+            existingSet.add(key); // Adicionar ao set para evitar salvar duas vezes no mesmo batch
             
             if (t.tipo === 'Despesa') {
                 totalDespesas += t.valor;
@@ -467,12 +515,12 @@ async function processarExtratoBancario(texto, chatId, statusMsg, bot) {
     }
     
     // Gerar resumo
-    const resumo = gerarResumoExtrato(transacoes, salvos, erros, totalDespesas, totalReceitas, categorias);
+    const resumo = gerarResumoExtrato(transacoesUnicas, salvos, erros, pulados, totalDespesas, totalReceitas, categorias);
     
     return { sucesso: true, mensagem: resumo, transacoes: salvos };
 }
 
-function gerarResumoExtrato(transacoes, salvos, erros, totalDespesas, totalReceitas, categorias) {
+function gerarResumoExtrato(transacoes, salvos, erros, pulados, totalDespesas, totalReceitas, categorias) {
     // Top 5 categorias
     const topCategorias = Object.entries(categorias)
         .sort((a, b) => b[1] - a[1])
@@ -481,14 +529,17 @@ function gerarResumoExtrato(transacoes, salvos, erros, totalDespesas, totalRecei
         .join('\n');
     
     // Período do extrato
-    const datas = transacoes.map(t => t.data).sort();
-    const dataInicio = datas[0];
-    const dataFim = datas[datas.length - 1];
+    const datas = transacoes.map(t => t.data).filter(d => d).sort();
+    const dataInicio = datas[0] || '';
+    const dataFim = datas[datas.length - 1] || '';
     
     let msg = `✅ *Extrato Processado!*\n\n`;
-    msg += `📅 *Período:* ${formatarDataBR(dataInicio)} a ${formatarDataBR(dataFim)}\n`;
-    msg += `📝 *Transações:* ${salvos} salvas`;
-    if (erros > 0) msg += ` (${erros} erros)`;
+    if (dataInicio && dataFim) {
+        msg += `📅 *Período:* ${formatarDataBR(dataInicio)} a ${formatarDataBR(dataFim)}\n`;
+    }
+    msg += `📝 *Transações:* ${salvos} novas salvas`;
+    if (pulados > 0) msg += `, ${pulados} já existiam`;
+    if (erros > 0) msg += `, ${erros} erros`;
     msg += `\n\n`;
     
     msg += `💰 *Resumo Financeiro:*\n`;
