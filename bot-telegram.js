@@ -182,7 +182,336 @@ function autoCategorizar(texto) {
     return { categoria: 'Outros', subcategoria: 'Outros' };
 }
 
-// ==================== EXTRAÇÃO DE DADOS ====================
+// ==================== PROCESSAMENTO DE EXTRATO BANCÁRIO ====================
+
+function detectarExtratoBancario(texto) {
+    const textoLower = texto.toLowerCase();
+    
+    // Indicadores de que é um extrato
+    const indicadoresExtrato = [
+        'extrato',
+        'movimentação',
+        'movimentacao', 
+        'lançamentos',
+        'lancamentos',
+        'período',
+        'periodo',
+        'saldo anterior',
+        'saldo atual',
+        'saldo final',
+        'saldo disponível',
+        'saldo disponivel'
+    ];
+    
+    const temIndicador = indicadoresExtrato.some(ind => textoLower.includes(ind));
+    
+    // Contar quantas linhas parecem ser transações (data + valor)
+    const linhas = texto.split('\n');
+    let linhasTransacao = 0;
+    
+    for (const linha of linhas) {
+        // Padrão: data no início e valor no final
+        if (/\d{2}[\/\-]\d{2}/.test(linha) && /[\d.,]+\s*[-]?\s*$|[-]?\s*[\d.,]+\s*$/.test(linha)) {
+            linhasTransacao++;
+        }
+    }
+    
+    // É extrato se tem indicador OU tem muitas linhas de transação
+    return temIndicador || linhasTransacao >= 5;
+}
+
+function extrairTransacoesExtrato(texto, anoReferencia = null) {
+    const transacoes = [];
+    const linhas = texto.split('\n');
+    const anoAtual = anoReferencia || new Date().getFullYear();
+    
+    // Tentar detectar o ano/mês do extrato
+    const matchPeriodo = texto.match(/(?:período|periodo|mês|mes|referência|referencia)[:\s]*(\d{2})[\/\-](\d{2,4})/i);
+    let mesExtrato = null;
+    let anoExtrato = anoAtual;
+    
+    if (matchPeriodo) {
+        mesExtrato = parseInt(matchPeriodo[1]);
+        if (matchPeriodo[2].length === 4) {
+            anoExtrato = parseInt(matchPeriodo[2]);
+        } else if (matchPeriodo[2].length === 2) {
+            anoExtrato = 2000 + parseInt(matchPeriodo[2]);
+        }
+    }
+    
+    // Padrões comuns de linha de extrato
+    const padroes = [
+        // Padrão 1: DD/MM Descrição Valor (negativo ou positivo)
+        /^(\d{2})[\/\-](\d{2})\s+(.+?)\s+(-?\s*[\d.,]+)\s*$/,
+        // Padrão 2: DD/MM/AAAA Descrição Valor
+        /^(\d{2})[\/\-](\d{2})[\/\-](\d{2,4})\s+(.+?)\s+(-?\s*[\d.,]+)\s*$/,
+        // Padrão 3: Descrição DD/MM Valor
+        /^(.+?)\s+(\d{2})[\/\-](\d{2})\s+(-?\s*[\d.,]+)\s*$/,
+        // Padrão 4: Data | Descrição | Débito | Crédito (formato tabular)
+        /^(\d{2})[\/\-](\d{2})[\/\-]?(\d{0,4})?\s*\|?\s*(.+?)\s*\|?\s*(-?[\d.,]*)\s*\|?\s*(-?[\d.,]*)\s*$/,
+    ];
+    
+    // Palavras a ignorar (não são transações)
+    const ignorar = [
+        'saldo', 'total', 'subtotal', 'resumo', 'agência', 'agencia', 
+        'conta', 'cliente', 'cpf', 'cnpj', 'período', 'periodo',
+        'banco', 'extrato', 'página', 'pagina', 'data', 'descrição', 'descricao',
+        'valor', 'débito', 'debito', 'crédito', 'credito', 'lançamento', 'lancamento'
+    ];
+    
+    for (let linha of linhas) {
+        linha = linha.trim();
+        if (!linha || linha.length < 10) continue;
+        
+        // Ignorar linhas de cabeçalho/rodapé
+        const linhaLower = linha.toLowerCase();
+        if (ignorar.some(ign => linhaLower.startsWith(ign))) continue;
+        if (/^saldo/i.test(linha)) continue;
+        
+        let transacao = null;
+        
+        // Tentar cada padrão
+        for (const padrao of padroes) {
+            const match = padrao.exec(linha);
+            if (match) {
+                transacao = extrairTransacaoDeMatch(match, anoExtrato, mesExtrato);
+                if (transacao) break;
+            }
+        }
+        
+        // Se não casou com padrão específico, tentar extração genérica
+        if (!transacao) {
+            transacao = extrairTransacaoGenerica(linha, anoExtrato, mesExtrato);
+        }
+        
+        if (transacao && transacao.valor > 0) {
+            // Categorizar
+            const cat = autoCategorizar(transacao.descricao);
+            transacao.categoria = cat.categoria;
+            transacao.subcategoria = cat.subcategoria;
+            
+            // Verificar conta fixa vinculada
+            const matchedBill = findMatchingFixedBill(transacao.descricao, transacao.categoria);
+            if (matchedBill) {
+                transacao.categoria = matchedBill.category;
+                transacao.subcategoria = matchedBill.name;
+                transacao.linkedBillId = matchedBill.id;
+                transacao.linkedBillName = matchedBill.name;
+            }
+            
+            transacoes.push(transacao);
+        }
+    }
+    
+    return transacoes;
+}
+
+function extrairTransacaoDeMatch(match, anoExtrato, mesExtrato) {
+    try {
+        let dia, mes, ano, descricao, valorStr;
+        
+        if (match.length === 5) {
+            // Padrão DD/MM Desc Valor
+            [, dia, mes, descricao, valorStr] = match;
+            ano = anoExtrato;
+        } else if (match.length === 6 && match[3] && match[3].length >= 2) {
+            // Padrão DD/MM/AAAA Desc Valor
+            [, dia, mes, ano, descricao, valorStr] = match;
+            if (ano.length === 2) ano = '20' + ano;
+        } else if (match.length === 7) {
+            // Padrão tabular com débito/crédito
+            [, dia, mes, ano, descricao, debitoStr, creditoStr] = match;
+            if (!ano || ano.length === 0) ano = anoExtrato;
+            else if (ano.length === 2) ano = '20' + ano;
+            
+            const debito = parseValorBR(debitoStr);
+            const credito = parseValorBR(creditoStr);
+            valorStr = debito > 0 ? `-${debitoStr}` : creditoStr;
+        }
+        
+        const valor = parseValorBR(valorStr);
+        if (!valor || valor <= 0) return null;
+        
+        // Determinar tipo
+        const isCredito = valorStr.trim().startsWith('+') || 
+                         (!valorStr.includes('-') && /cr[ée]dito|entrada|dep[oó]sito|transfer[eê]ncia\s+recebida/i.test(descricao));
+        
+        const data = `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+        
+        return {
+            data: data,
+            descricao: limparDescricaoExtrato(descricao),
+            valor: Math.abs(valor),
+            tipo: isCredito ? 'Receita' : 'Despesa',
+            fonte: 'Débito'
+        };
+    } catch (e) {
+        return null;
+    }
+}
+
+function extrairTransacaoGenerica(linha, anoExtrato, mesExtrato) {
+    try {
+        // Procurar data na linha
+        const matchData = linha.match(/(\d{2})[\/\-](\d{2})(?:[\/\-](\d{2,4}))?/);
+        if (!matchData) return null;
+        
+        // Procurar valor na linha
+        const matchValor = linha.match(/(-?\s*\d{1,3}(?:[.,]\d{3})*[.,]\d{2})\s*$/);
+        if (!matchValor) return null;
+        
+        const [, dia, mes, ano] = matchData;
+        const valorStr = matchValor[1];
+        const valor = parseValorBR(valorStr);
+        
+        if (!valor || valor <= 0.01) return null;
+        
+        // Extrair descrição (tudo entre a data e o valor)
+        let descricao = linha
+            .replace(matchData[0], '')
+            .replace(matchValor[0], '')
+            .trim();
+        
+        if (!descricao || descricao.length < 3) return null;
+        
+        const anoFinal = ano ? (ano.length === 2 ? '20' + ano : ano) : anoExtrato;
+        const data = `${anoFinal}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+        
+        const isCredito = valorStr.trim().startsWith('+');
+        
+        return {
+            data: data,
+            descricao: limparDescricaoExtrato(descricao),
+            valor: Math.abs(valor),
+            tipo: isCredito ? 'Receita' : 'Despesa',
+            fonte: 'Débito'
+        };
+    } catch (e) {
+        return null;
+    }
+}
+
+function limparDescricaoExtrato(desc) {
+    if (!desc) return 'Sem descrição';
+    
+    let limpa = desc
+        .replace(/\s+/g, ' ')
+        .replace(/[|;]/g, ' ')
+        .replace(/^\d+\s*/, '') // Remover números no início
+        .replace(/\s*\d+$/, '') // Remover números no final
+        .trim();
+    
+    // Limitar tamanho
+    if (limpa.length > 60) {
+        limpa = limpa.substring(0, 57) + '...';
+    }
+    
+    return limpa || 'Transação';
+}
+
+async function processarExtratoBancario(texto, chatId, statusMsg, bot) {
+    console.log('[DEBUG] Processando extrato bancário...');
+    
+    const transacoes = extrairTransacoesExtrato(texto);
+    
+    if (transacoes.length === 0) {
+        return { sucesso: false, mensagem: 'Não consegui identificar transações no extrato.' };
+    }
+    
+    // Atualizar status
+    await bot.editMessageText(
+        `📊 *Extrato detectado!*\n\n` +
+        `Encontrei *${transacoes.length} transações*.\n` +
+        `Processando e salvando...`,
+        { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'Markdown' }
+    );
+    
+    // Salvar todas as transações
+    let salvos = 0;
+    let erros = 0;
+    let totalDespesas = 0;
+    let totalReceitas = 0;
+    const categorias = {};
+    
+    for (const t of transacoes) {
+        try {
+            const result = await salvarRegistro({
+                data: t.data,
+                descricao: t.descricao,
+                valor: t.valor,
+                tipo: t.tipo,
+                fonte: t.fonte,
+                categoria: t.categoria,
+                subcategoria: t.subcategoria,
+                pagador: 'familia',
+                linkedBillId: t.linkedBillId,
+                linkedBillName: t.linkedBillName
+            });
+            
+            salvos++;
+            
+            if (t.tipo === 'Despesa') {
+                totalDespesas += t.valor;
+            } else {
+                totalReceitas += t.valor;
+            }
+            
+            // Contagem por categoria
+            const catKey = t.categoria;
+            categorias[catKey] = (categorias[catKey] || 0) + t.valor;
+            
+        } catch (err) {
+            console.error('Erro ao salvar transação do extrato:', err);
+            erros++;
+        }
+    }
+    
+    // Gerar resumo
+    const resumo = gerarResumoExtrato(transacoes, salvos, erros, totalDespesas, totalReceitas, categorias);
+    
+    return { sucesso: true, mensagem: resumo, transacoes: salvos };
+}
+
+function gerarResumoExtrato(transacoes, salvos, erros, totalDespesas, totalReceitas, categorias) {
+    // Top 5 categorias
+    const topCategorias = Object.entries(categorias)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([cat, val]) => `  • ${cat}: R$ ${val.toFixed(2)}`)
+        .join('\n');
+    
+    // Período do extrato
+    const datas = transacoes.map(t => t.data).sort();
+    const dataInicio = datas[0];
+    const dataFim = datas[datas.length - 1];
+    
+    let msg = `✅ *Extrato Processado!*\n\n`;
+    msg += `📅 *Período:* ${formatarDataBR(dataInicio)} a ${formatarDataBR(dataFim)}\n`;
+    msg += `📝 *Transações:* ${salvos} salvas`;
+    if (erros > 0) msg += ` (${erros} erros)`;
+    msg += `\n\n`;
+    
+    msg += `💰 *Resumo Financeiro:*\n`;
+    msg += `  📈 Receitas: R$ ${totalReceitas.toFixed(2)}\n`;
+    msg += `  📉 Despesas: R$ ${totalDespesas.toFixed(2)}\n`;
+    msg += `  💵 Saldo: R$ ${(totalReceitas - totalDespesas).toFixed(2)}\n\n`;
+    
+    if (topCategorias) {
+        msg += `📊 *Top Categorias \\(Despesas\\):*\n${topCategorias}\n\n`;
+    }
+    
+    msg += `_Todas as transações foram categorizadas automaticamente e salvas no app\\!_`;
+    
+    return msg;
+}
+
+function formatarDataBR(data) {
+    if (!data) return '';
+    const [ano, mes, dia] = data.split('-');
+    return `${dia}/${mes}/${ano}`;
+}
+
+// ==================== EXTRAÇÃO DE DADOS (comprovante único) ====================
 
 function extrairDados(texto) {
     const dados = {
@@ -526,8 +855,9 @@ bot.onText(/\/start/, (msg) => {
         `• Fotos de comprovantes\n` +
         `• Screenshots de Pix/transferências\n` +
         `• PDFs de boletos/recibos\n` +
-        `• Documentos de comprovantes\n\n` +
-        `Tudo é processado e salvo sem precisar de confirmação.\n\n` +
+        `• Documentos de comprovantes\n` +
+        `• 📊 *Extratos bancários completos!*\n\n` +
+        `_Extratos são detectados automaticamente e todas as transações são salvas!_\n\n` +
         `*Comandos:*\n` +
         `/ultimos - Ver últimos registros\n` +
         `/resumo - Resumo do mês\n` +
@@ -654,7 +984,7 @@ bot.onText(/\/ajuda/, (msg) => {
 
 bot.on('photo', async (msg) => {
     const chatId = msg.chat.id;
-    const statusMsg = await bot.sendMessage(chatId, '⏳ Analisando comprovante...');
+    const statusMsg = await bot.sendMessage(chatId, '⏳ Analisando imagem...');
 
     try {
         const photo = msg.photo[msg.photo.length - 1];
@@ -665,6 +995,17 @@ bot.on('photo', async (msg) => {
         await downloadFile(fileUrl, imagePath);
 
         const texto = await processarImagem(imagePath);
+        
+        // Verificar se é extrato bancário
+        if (detectarExtratoBancario(texto)) {
+            const resultado = await processarExtratoBancario(texto, chatId, statusMsg, bot);
+            await bot.editMessageText(resultado.mensagem,
+                { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'MarkdownV2' }
+            );
+            return;
+        }
+        
+        // Processamento normal de comprovante único
         const dados = extrairDados(texto);
 
         if (!dados.valor) {
@@ -726,6 +1067,16 @@ bot.on('document', async (msg) => {
             texto = await processarImagem(filePath);
         }
 
+        // Verificar se é extrato bancário
+        if (detectarExtratoBancario(texto)) {
+            const resultado = await processarExtratoBancario(texto, chatId, statusMsg, bot);
+            await bot.editMessageText(resultado.mensagem,
+                { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: 'MarkdownV2' }
+            );
+            return;
+        }
+
+        // Processamento normal de comprovante único
         const dados = extrairDados(texto);
 
         if (!dados.valor) {
