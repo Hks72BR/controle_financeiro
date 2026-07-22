@@ -273,6 +273,8 @@ function switchTab(tabName) {
         case 'analytics': renderAnalytics(); break;
         case 'bills': renderBillsTab(); break;
         case 'config': renderConfig(); break;
+        case 'openfinance': loadOpenFinanceTab(); break;
+        case 'chatia': initChatIfNeeded(); break;
     }
 }
 
@@ -363,7 +365,7 @@ function renderDashboard() {
     document.getElementById('totalDespesas').textContent = formatCurrency(despesas);
     document.getElementById('saldo').textContent = formatCurrency(saldo);
     document.getElementById('taxaEconomia').textContent = taxa.toFixed(0) + '%';
-    document.getElementById('dashboardSubtitle').textContent = formatMonthName(month);
+    document.getElementById('dashboardSubtitle').textContent = `👨‍👩‍👧 Visão Familiar | ${formatMonthName(month)}`;
 
     const higorCfg = config.higor || {};
     const rafaCfg = config.rafa || {};
@@ -403,17 +405,21 @@ function renderRecentTransactions(filtered) {
         return;
     }
 
-    container.innerHTML = recent.map(t => `
+    container.innerHTML = recent.map(t => {
+        const creator = t.createdBy || 'Desconhecido';
+        const creatorClass = creator === 'Higor' ? 'higor' : creator === 'Rafaella' ? 'rafa' : 'unknown';
+        return `
         <div class="recent-item">
             <div class="recent-item-left">
                 <span class="recent-item-desc">${escapeHtml(t.descricao || 'Sem descrição')}</span>
-                <span class="recent-item-cat">${escapeHtml(t.categoria || '')} • ${formatDateBR(t.data)}</span>
+                <span class="recent-item-cat">${escapeHtml(t.categoria || '')} • ${formatDateBR(t.data)} <span class="creator-badge ${creatorClass}">${creator}</span></span>
             </div>
             <span class="recent-item-value ${t.tipo === 'Receita' ? 'receita' : 'despesa'}">
                 ${t.tipo === 'Receita' ? '+' : '-'} ${formatCurrency(t.valor)}
             </span>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 // ==================== TRANSACTIONS ====================
@@ -499,6 +505,11 @@ async function handleAddTransaction(e) {
         document.getElementById('formData').value = new Date().toISOString().split('T')[0];
         document.querySelector('input[name="tipo"][value="Despesa"]').checked = true;
         showToast('Transação adicionada!', 'success');
+        
+        // Check AI suggestions for auto-categorization
+        if (typeof checkForAiSuggestions === 'function') {
+            checkForAiSuggestions(transaction);
+        }
     }
 }
 
@@ -1572,6 +1583,439 @@ async function checkSalaryAfterLogin() {
     }, 2000);
 }
 
+// ==================== OPEN FINANCE (PLUGGY) ====================
+
+// URL base do nosso backend
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? `http://localhost:${window.location.port || 3000}`
+    : window.location.origin;
+
+let ofItems = [];       // bancos conectados
+let ofAccounts = [];    // contas bancárias
+let ofBalances = [];    // saldos formatados para o chat IA
+
+async function loadOpenFinanceTab() {
+    showOfStatus('Carregando bancos conectados...');
+    try {
+        await loadOfItems();
+    } catch (err) {
+        showOfStatus('');
+        console.error('[OF] Erro ao carregar:', err);
+    }
+}
+
+async function loadOfItems() {
+    try {
+        const res = await fetch(`${API_BASE}/api/pluggy/items`);
+        if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+        const data = await res.json();
+        ofItems = data.results || data.items || [];
+        renderOfItems();
+        if (ofItems.length > 0) {
+            await loadAllAccounts();
+        }
+    } catch (err) {
+        console.error('[OF] loadOfItems error:', err);
+        showToast('Erro ao carregar bancos: ' + err.message, 'error');
+    } finally {
+        showOfStatus('');
+    }
+}
+
+function renderOfItems() {
+    const container = document.getElementById('ofItemsList');
+    if (!container) return;
+
+    if (ofItems.length === 0) {
+        container.innerHTML = `
+            <div class="of-empty-state">
+                <span class="material-icons-round">account_balance</span>
+                <h3>Nenhum banco conectado ainda</h3>
+                <p>Conecte seus bancos via Open Finance para ver saldos, extratos e investimentos automaticamente.</p>
+                <button class="btn-primary" onclick="openPluggyConnect()">
+                    <span class="material-icons-round">add_circle_outline</span>
+                    Conectar meu primeiro banco
+                </button>
+            </div>`;
+        return;
+    }
+
+    container.innerHTML = ofItems.map(item => {
+        const statusColor = item.status === 'UPDATED' ? 'success' : item.status === 'UPDATING' ? 'warning' : 'danger';
+        const statusLabel = { UPDATED: 'Atualizado', UPDATING: 'Atualizando', LOGIN_ERROR: 'Erro de Login', WAITING_USER_INPUT: 'Aguardando', OUTDATED: 'Desatualizado' }[item.status] || item.status;
+        return `
+        <div class="of-item-card" data-item-id="${item.id}">
+            <div class="of-item-logo">
+                ${item.connector?.imageUrl
+                    ? `<img src="${item.connector.imageUrl}" alt="${item.connector?.name}" onerror="this.style.display='none'">`
+                    : `<span class="material-icons-round">account_balance</span>`
+                }
+            </div>
+            <div class="of-item-info">
+                <strong>${item.connector?.name || 'Banco'}</strong>
+                <span class="badge badge-${statusColor}">${statusLabel}</span>
+                <small>Atualizado: ${item.lastUpdatedAt ? new Date(item.lastUpdatedAt).toLocaleDateString('pt-BR') : 'Nunca'}</small>
+            </div>
+            <div class="of-item-actions">
+                <button class="btn-icon" onclick="refreshOfItem('${item.id}')" title="Reconectar">
+                    <span class="material-icons-round">sync</span>
+                </button>
+                <button class="btn-icon btn-danger-icon" onclick="deleteOfItem('${item.id}')" title="Desconectar">
+                    <span class="material-icons-round">link_off</span>
+                </button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function loadAllAccounts() {
+    try {
+        let allAccounts = [];
+        for (const item of ofItems) {
+            const res = await fetch(`${API_BASE}/api/pluggy/accounts?itemId=${item.id}`);
+            if (!res.ok) continue;
+            const data = await res.json();
+            const accounts = (data.results || data.accounts || []).map(a => ({ ...a, bankName: item.connector?.name || 'Banco' }));
+            allAccounts = allAccounts.concat(accounts);
+        }
+        ofAccounts = allAccounts;
+        ofBalances = allAccounts.map(a => ({ name: a.name, bankName: a.bankName, balance: a.balance }));
+        renderOfAccounts();
+        renderOfSummary();
+        populateOfAccountFilter();
+        if (allAccounts.length > 0) {
+            loadOfTransactions(allAccounts[0].id);
+        }
+    } catch (err) {
+        console.error('[OF] loadAllAccounts error:', err);
+    }
+}
+
+function renderOfAccounts() {
+    const container = document.getElementById('ofAccountsList');
+    const section = document.getElementById('ofAccountsSection');
+    if (!container || !section) return;
+
+    if (ofAccounts.length === 0) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+
+    container.innerHTML = ofAccounts.map(acc => {
+        const typeLabel = { BANK: 'Conta Corrente', SAVINGS: 'Poupança', CREDIT: 'Crédito', INVESTMENT: 'Investimento' }[acc.type] || acc.type;
+        return `
+        <div class="of-account-card" onclick="loadOfTransactions('${acc.id}')">
+            <div class="of-account-icon">
+                <span class="material-icons-round">${acc.type === 'CREDIT' ? 'credit_card' : acc.type === 'SAVINGS' ? 'savings' : 'account_balance_wallet'}</span>
+            </div>
+            <div class="of-account-info">
+                <strong>${acc.name}</strong>
+                <span>${acc.bankName} · ${typeLabel}</span>
+            </div>
+            <div class="of-account-balance">
+                <strong>R$ ${(acc.balance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                ${acc.creditData ? `<small>Limite: R$ ${(acc.creditData.creditLimit || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</small>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function renderOfSummary() {
+    const totalBalance = ofAccounts
+        .filter(a => a.type !== 'CREDIT')
+        .reduce((s, a) => s + (a.balance || 0), 0);
+
+    const el = document.getElementById('ofSummary');
+    if (el) el.style.display = 'flex';
+    const tb = document.getElementById('ofTotalBalance');
+    if (tb) tb.textContent = `R$ ${totalBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+}
+
+function populateOfAccountFilter() {
+    const select = document.getElementById('ofAccountFilter');
+    if (!select) return;
+    select.innerHTML = ofAccounts.map(a =>
+        `<option value="${a.id}">${a.bankName} - ${a.name}</option>`
+    ).join('');
+    select.onchange = () => loadOfTransactions(select.value);
+}
+
+async function loadOfTransactions(accountId) {
+    const section = document.getElementById('ofTransactionsSection');
+    const container = document.getElementById('ofTransactionsList');
+    if (!section || !container) return;
+    section.style.display = 'block';
+    container.innerHTML = '<div class="loading-spinner"><span class="material-icons-round spin">sync</span> Carregando...</div>';
+
+    try {
+        const to = new Date().toISOString().split('T')[0];
+        const from = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+        const res = await fetch(`${API_BASE}/api/pluggy/transactions?accountId=${accountId}&from=${from}&to=${to}&pageSize=50`);
+        if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+        const data = await res.json();
+        const txs = data.results || data.transactions || [];
+
+        if (txs.length === 0) {
+            container.innerHTML = '<p class="empty-msg">Nenhuma transação nos últimos 30 dias.</p>';
+            return;
+        }
+
+        container.innerHTML = txs.map(tx => {
+            const isDebit = tx.type === 'DEBIT' || tx.amount < 0;
+            const amount = Math.abs(tx.amount || 0);
+            return `
+            <div class="of-tx-item">
+                <div class="of-tx-left">
+                    <span class="material-icons-round of-tx-icon ${isDebit ? 'debit' : 'credit'}">${isDebit ? 'arrow_downward' : 'arrow_upward'}</span>
+                    <div>
+                        <strong>${tx.description || tx.descriptionRaw || 'Transação'}</strong>
+                        <span>${tx.category || 'Sem categoria'} · ${tx.date ? new Date(tx.date).toLocaleDateString('pt-BR') : ''}</span>
+                    </div>
+                </div>
+                <strong class="of-tx-amount ${isDebit ? 'debit' : 'credit'}">
+                    ${isDebit ? '-' : '+'}R$ ${amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </strong>
+            </div>`;
+        }).join('');
+    } catch (err) {
+        container.innerHTML = `<p class="empty-msg">Erro ao carregar transações: ${err.message}</p>`;
+    }
+}
+
+async function openPluggyConnect(itemId = null) {
+    try {
+        showOfStatus('Abrindo conexão com banco...');
+        const body = itemId ? { itemId } : {};
+        const res = await fetch(`${API_BASE}/api/pluggy/connect-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Erro ao gerar token');
+
+        if (typeof PluggyConnect === 'undefined') {
+            showToast('Pluggy Connect não carregou. Verifique sua conexão.', 'error');
+            showOfStatus('');
+            return;
+        }
+
+        const pluggyConnect = new PluggyConnect({
+            connectToken: data.accessToken,
+            includeSandbox: false,
+            onSuccess: async (itemData) => {
+                showToast('Banco conectado com sucesso!', 'success');
+                await loadOfItems();
+            },
+            onError: (err) => {
+                console.error('[PluggyConnect] error:', err);
+                showToast('Erro ao conectar banco: ' + (err.message || err), 'error');
+            },
+            onClose: () => {
+                showOfStatus('');
+            }
+        });
+
+        pluggyConnect.init();
+        showOfStatus('');
+    } catch (err) {
+        showOfStatus('');
+        showToast('Erro: ' + err.message, 'error');
+    }
+}
+
+window.openPluggyConnect = openPluggyConnect;
+
+async function refreshOfItem(itemId) {
+    await openPluggyConnect(itemId);
+}
+
+window.refreshOfItem = refreshOfItem;
+
+async function deleteOfItem(itemId) {
+    if (!confirm('Desconectar este banco? Os dados importados permanecerão.')) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/pluggy/items/${itemId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.json()).error || 'Erro ao desconectar');
+        showToast('Banco desconectado.', 'success');
+        await loadOfItems();
+    } catch (err) {
+        showToast('Erro: ' + err.message, 'error');
+    }
+}
+
+window.deleteOfItem = deleteOfItem;
+
+function showOfStatus(msg) {
+    const bar = document.getElementById('ofStatusBar');
+    const text = document.getElementById('ofStatusText');
+    if (!bar) return;
+    if (msg) { text.textContent = msg; bar.style.display = 'flex'; }
+    else { bar.style.display = 'none'; }
+}
+
+// Setup Open Finance button listeners
+function setupOpenFinanceListeners() {
+    const connectBtn = document.getElementById('connectBankBtn');
+    if (connectBtn) connectBtn.addEventListener('click', () => openPluggyConnect());
+}
+
+// ==================== CHAT IA (GEMINI) ====================
+
+let chatMessages = [];
+let chatInitialized = false;
+
+function initChatIfNeeded() {
+    if (chatInitialized) return;
+    chatInitialized = true;
+    setupChatListeners();
+}
+
+function setupChatListeners() {
+    const sendBtn = document.getElementById('chatSendBtn');
+    const input = document.getElementById('chatInput');
+    const clearBtn = document.getElementById('clearChatBtn');
+
+    if (!sendBtn || !input) return;
+
+    sendBtn.addEventListener('click', sendChatMessage);
+    clearBtn?.addEventListener('click', clearChat);
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendChatMessage();
+        }
+    });
+
+    // Auto-resize textarea
+    input.addEventListener('input', () => {
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    });
+}
+
+async function sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    const text = input?.value?.trim();
+    if (!text) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+
+    // Adiciona msg do usuário na tela
+    appendChatMessage('user', text);
+
+    // Adiciona no histórico no formato Gemini
+    chatMessages.push({ role: 'user', parts: [{ text }] });
+
+    // Auto-detect deposit suggestions
+    if (typeof chatIaAutoDetectDeposit === 'function') {
+        const depositHint = await chatIaAutoDetectDeposit(text);
+        if (depositHint) {
+            appendChatMessage('model', depositHint);
+            chatMessages.push({ role: 'model', parts: [{ text: depositHint }] });
+        }
+    }
+
+    // Mostra indicador de digitação
+    const typingId = showTypingIndicator();
+
+    try {
+        // Prepara contexto financeiro
+        const currentMonth = document.getElementById('dashboardMonth')?.value || getCurrentMonth();
+        const monthTransactions = transactions.filter(t => (t.data || '').startsWith(currentMonth));
+
+        const res = await fetch(`${API_BASE}/api/ai/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [...chatMessages],
+                context: {
+                    transactions: monthTransactions,
+                    balances: ofBalances,
+                    user: currentUser || 'Família',
+                    currentMonth
+                }
+            })
+        });
+
+        removeTypingIndicator(typingId);
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Erro na resposta da IA');
+
+        const reply = data.text || 'Não obtive resposta.';
+        appendChatMessage('model', reply);
+        chatMessages.push({ role: 'model', parts: [{ text: reply }] });
+
+        // Limita histórico para não estourar contexto
+        if (chatMessages.length > 20) chatMessages = chatMessages.slice(-20);
+
+    } catch (err) {
+        removeTypingIndicator(typingId);
+        appendChatMessage('model', 'Desculpe, ocorreu um erro: ' + err.message + '. Verifique se o servidor está rodando e o GEMINI_API_KEY está configurado.');
+    }
+}
+
+function appendChatMessage(role, text) {
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+
+    const div = document.createElement('div');
+    div.className = `chat-msg ${role}`;
+
+    // Converte markdown simples (negrito, listas, quebras)
+    const formatted = text
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
+        .replace(/\n/g, '<br>');
+
+    const now = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    div.innerHTML = `
+        <div class="chat-bubble"><p>${formatted}</p></div>
+        <span class="chat-time">${now}</span>`;
+
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function showTypingIndicator() {
+    const container = document.getElementById('chatMessages');
+    if (!container) return null;
+    const id = 'typing-' + Date.now();
+    const div = document.createElement('div');
+    div.id = id;
+    div.className = 'chat-msg model typing';
+    div.innerHTML = `<div class="chat-bubble"><span class="typing-dots"><span></span><span></span><span></span></span></div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return id;
+}
+
+function removeTypingIndicator(id) {
+    if (id) document.getElementById(id)?.remove();
+}
+
+function clearChat() {
+    chatMessages = [];
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+    container.innerHTML = `
+        <div class="chat-msg model">
+            <div class="chat-bubble">
+                <p>Conversa limpa! Como posso ajudar com suas finanças? 😊</p>
+            </div>
+            <span class="chat-time">${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>`;
+}
+
+function getCurrentMonth() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 // ==================== INIT ====================
 init();
 setupSalaryListeners();
+setupOpenFinanceListeners();

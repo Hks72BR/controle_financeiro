@@ -9,6 +9,10 @@ npm-debug.log
 .env
 .env.*
 
+# Secrets
+secrets
+secrets.*
+
 # OS
 .DS_Store
 Thumbs.db

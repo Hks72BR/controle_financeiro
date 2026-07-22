@@ -21,6 +21,8 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+    <!-- Pluggy Connect Widget -->
+    <script src="https://cdn.pluggy.ai/pluggy-connect/v2.8.2/pluggy-connect.js"></script>
 </head>
 <body>
 
@@ -81,6 +83,14 @@
             <button class="nav-item" data-tab="analytics">
                 <span class="material-icons-round">analytics</span>
                 <span>Analytics</span>
+            </button>
+            <button class="nav-item" data-tab="openfinance">
+                <span class="material-icons-round">account_balance</span>
+                <span>Open Finance</span>
+            </button>
+            <button class="nav-item" data-tab="chatia">
+                <span class="material-icons-round">smart_toy</span>
+                <span>Chat IA</span>
             </button>
             <button class="nav-item" data-tab="config">
                 <span class="material-icons-round">settings</span>
@@ -577,6 +587,145 @@
             </div>
         </section>
 
+        <!-- ========== OPEN FINANCE ========== -->
+        <section id="openfinanceTab" class="tab-content">
+            <div class="page-header">
+                <div>
+                    <h1>Open Finance</h1>
+                    <p class="subtitle">Seus bancos num lugar só</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-primary" id="connectBankBtn">
+                        <span class="material-icons-round">add_circle_outline</span>
+                        Conectar Banco
+                    </button>
+                </div>
+            </div>
+
+            <!-- Status da Conexão -->
+            <div class="of-status-bar" id="ofStatusBar" style="display:none">
+                <span class="material-icons-round">sync</span>
+                <span id="ofStatusText">Sincronizando dados bancários...</span>
+            </div>
+
+            <!-- Resumo de Saldos -->
+            <div class="of-summary" id="ofSummary" style="display:none">
+                <div class="of-summary-card">
+                    <span class="material-icons-round">account_balance_wallet</span>
+                    <div>
+                        <span class="of-label">Saldo Total</span>
+                        <strong class="of-value" id="ofTotalBalance">R$ 0,00</strong>
+                    </div>
+                </div>
+                <div class="of-summary-card">
+                    <span class="material-icons-round">trending_down</span>
+                    <div>
+                        <span class="of-label">Gastos (30 dias)</span>
+                        <strong class="of-value" id="ofTotalSpend">R$ 0,00</strong>
+                    </div>
+                </div>
+                <div class="of-summary-card">
+                    <span class="material-icons-round">show_chart</span>
+                    <div>
+                        <span class="of-label">Investimentos</span>
+                        <strong class="of-value" id="ofTotalInvestments">R$ 0,00</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bancos Conectados -->
+            <div class="of-section">
+                <h2 class="section-title">
+                    <span class="material-icons-round">hub</span>
+                    Bancos Conectados
+                </h2>
+                <div id="ofItemsList" class="of-items-list">
+                    <div class="of-empty-state">
+                        <span class="material-icons-round">account_balance</span>
+                        <h3>Nenhum banco conectado ainda</h3>
+                        <p>Conecte seus bancos via Open Finance para ver saldos, extratos e investimentos automaticamente.</p>
+                        <button class="btn-primary" onclick="openPluggyConnect()">
+                            <span class="material-icons-round">add_circle_outline</span>
+                            Conectar meu primeiro banco
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contas Bancárias -->
+            <div class="of-section" id="ofAccountsSection" style="display:none">
+                <h2 class="section-title">
+                    <span class="material-icons-round">credit_card</span>
+                    Contas e Saldos
+                </h2>
+                <div id="ofAccountsList" class="of-accounts-list"></div>
+            </div>
+
+            <!-- Transações Open Finance -->
+            <div class="of-section" id="ofTransactionsSection" style="display:none">
+                <div class="of-section-header">
+                    <h2 class="section-title">
+                        <span class="material-icons-round">receipt_long</span>
+                        Transações Recentes
+                    </h2>
+                    <select id="ofAccountFilter" class="select-month"></select>
+                </div>
+                <div id="ofTransactionsList" class="of-transactions-list"></div>
+            </div>
+        </section>
+
+        <!-- ========== CHAT IA ========== -->
+        <section id="chatiaTab" class="tab-content">
+            <div class="chat-layout">
+                <div class="chat-header">
+                    <div class="chat-header-info">
+                        <div class="chat-avatar">
+                            <span class="material-icons-round">smart_toy</span>
+                        </div>
+                        <div>
+                            <h2>Assistente Financeiro IA</h2>
+                            <span class="chat-status" id="chatStatus">Powered by Gemini</span>
+                        </div>
+                    </div>
+                    <button class="btn-icon" id="clearChatBtn" title="Limpar conversa">
+                        <span class="material-icons-round">delete_sweep</span>
+                    </button>
+                </div>
+
+                <div class="chat-messages" id="chatMessages">
+                    <div class="chat-msg model">
+                        <div class="chat-bubble">
+                            <p>Olá! 👋 Sou seu assistente financeiro pessoal.</p>
+                            <p>Posso responder perguntas como:</p>
+                            <ul>
+                                <li>"Quanto gastei com alimentação esse mês?"</li>
+                                <li>"Como está nosso saldo geral?"</li>
+                                <li>"Qual categoria mais consumiu nossa renda?"</li>
+                                <li>"Tô gastando demais?"</li>
+                            </ul>
+                            <p>Me pergunte do seu jeito! 😊</p>
+                        </div>
+                        <span class="chat-time">Agora</span>
+                    </div>
+                </div>
+
+                <div class="chat-input-area">
+                    <div class="chat-input-wrap">
+                        <textarea
+                            id="chatInput"
+                            placeholder="Pergunte sobre suas finanças..."
+                            rows="1"
+                            maxlength="500"
+                        ></textarea>
+                        <button class="chat-send-btn" id="chatSendBtn">
+                            <span class="material-icons-round">send</span>
+                        </button>
+                    </div>
+                    <p class="chat-disclaimer">As respostas são baseadas nos dados registrados no app.</p>
+                </div>
+            </div>
+        </section>
+
         <!-- ========== CONFIGURAÇÕES ========== -->
         <section id="configTab" class="tab-content">
             <div class="page-header">
@@ -828,13 +977,13 @@
             <span class="material-icons-round">add_circle</span>
             <span>Novo</span>
         </button>
-        <button class="mobile-nav-item" data-tab="bills">
-            <span class="material-icons-round">event_note</span>
-            <span>Contas</span>
+        <button class="mobile-nav-item" data-tab="openfinance">
+            <span class="material-icons-round">account_balance</span>
+            <span>Bancos</span>
         </button>
-        <button class="mobile-nav-item" data-tab="analytics">
-            <span class="material-icons-round">analytics</span>
-            <span>BI</span>
+        <button class="mobile-nav-item" data-tab="chatia">
+            <span class="material-icons-round">smart_toy</span>
+            <span>Chat IA</span>
         </button>
         <button class="mobile-nav-item" data-tab="config">
             <span class="material-icons-round">settings</span>
@@ -1017,6 +1166,7 @@
     </div>
 </div>
 
+<script src="ai-suggestions.js"></script>
 <script src="app.js?v=2"></script>
 <script>
     // Service Worker
