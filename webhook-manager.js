@@ -51,7 +51,7 @@ async function registerWebhook() {
             `${PLUGGY_BASE}/webhooks`,
             {
                 url: webhookUrl,
-                events: ['all']
+                event: 'all'
             },
             { headers: pluggyHeaders(apiKey) }
         );

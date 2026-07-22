@@ -335,7 +335,7 @@ app.post('/api/pluggy/register-webhook', async (req, res) => {
             `${PLUGGY_BASE}/webhooks`,
             {
                 url: webhookUrl,
-                events: ['all']
+                event: 'all'
             },
             { headers: pluggyHeaders(apiKey) }
         );
