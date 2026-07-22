@@ -249,7 +249,7 @@ function validatePluggyWebhookSignature(payload, signature) {
 /**
  * POST /api/pluggy/webhook
  * Recebe eventos do Pluggy em tempo real
- * Eventos possíveis: ITEM_STATUS_CHANGED, TRANSACTION_RECEIVED, ACCOUNT_CREATED, ITEM_ERROR
+ * Eventos possíveis: item/updated, transactions/created, item/created, item/error
  */
 app.post('/api/pluggy/webhook', async (req, res) => {
     try {
@@ -267,16 +267,16 @@ app.post('/api/pluggy/webhook', async (req, res) => {
 
         // Processar cada tipo de evento
         switch (type) {
-            case 'ITEM_STATUS_CHANGED':
+            case 'item/updated':
                 await handleItemStatusChanged(data);
                 break;
-            case 'TRANSACTION_RECEIVED':
+            case 'transactions/created':
                 await handleTransactionReceived(data);
                 break;
-            case 'ACCOUNT_CREATED':
+            case 'item/created':
                 await handleAccountCreated(data);
                 break;
-            case 'ITEM_ERROR':
+            case 'item/error':
                 await handleItemError(data);
                 break;
             default:
@@ -335,7 +335,7 @@ app.post('/api/pluggy/register-webhook', async (req, res) => {
             `${PLUGGY_BASE}/webhooks`,
             {
                 url: webhookUrl,
-                events: ['ITEM_STATUS_CHANGED', 'TRANSACTION_RECEIVED', 'ACCOUNT_CREATED', 'ITEM_ERROR']
+                events: ['item/updated', 'transactions/created', 'item/created', 'item/error']
             },
             { headers: pluggyHeaders(apiKey) }
         );

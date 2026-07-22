@@ -45,13 +45,13 @@ async function registerWebhook() {
 
         console.log(`📍 URL: ${webhookUrl}`);
         console.log(`🔐 Secret: ${PLUGGY_WEBHOOK_SECRET.substring(0, 8)}...`);
-        console.log('📋 Eventos: ITEM_STATUS_CHANGED, TRANSACTION_RECEIVED, ACCOUNT_CREATED, ITEM_ERROR\n');
+        console.log('📋 Eventos: item/updated, transactions/created, item/created, item/error\n');
 
         const response = await axios.post(
             `${PLUGGY_BASE}/webhooks`,
             {
                 url: webhookUrl,
-                events: ['ITEM_STATUS_CHANGED', 'TRANSACTION_RECEIVED', 'ACCOUNT_CREATED', 'ITEM_ERROR']
+                events: ['item/updated', 'transactions/created', 'item/created', 'item/error']
             },
             { headers: pluggyHeaders(apiKey) }
         );
