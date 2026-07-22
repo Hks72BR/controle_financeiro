@@ -60,7 +60,7 @@ async function registerWebhook() {
         console.log('ID:', response.data.id);
         console.log('URL:', response.data.url);
         console.log('Status:', response.data.status || 'active');
-        console.log('Eventos:', response.data.events.join(', '));
+        console.log('Eventos:', response.data.events ? response.data.events.join(', ') : 'all');
         console.log('\nGuarde este ID para futuras referências.');
     } catch (err) {
         console.error('❌ Erro:', err.response?.data?.message || err.message);
