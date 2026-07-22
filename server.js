@@ -249,7 +249,7 @@ function validatePluggyWebhookSignature(payload, signature) {
 /**
  * POST /api/pluggy/webhook
  * Recebe eventos do Pluggy em tempo real
- * Eventos possíveis: item/updated, transactions/created, item/created, item/error
+ * Eventos: all (todos os eventos Pluggy)
  */
 app.post('/api/pluggy/webhook', async (req, res) => {
     try {
@@ -335,7 +335,7 @@ app.post('/api/pluggy/register-webhook', async (req, res) => {
             `${PLUGGY_BASE}/webhooks`,
             {
                 url: webhookUrl,
-                events: ['item/updated', 'transactions/created', 'item/created', 'item/error']
+                events: ['all']
             },
             { headers: pluggyHeaders(apiKey) }
         );
